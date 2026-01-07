@@ -11,7 +11,7 @@ export async function GET() {
         // 1. Check if directory exists
         if (!fs.existsSync(DATA_DIR)) {
             console.warn(`[Registry] Data directory not found: ${DATA_DIR}`);
-            return NextResponse.json({ prompts: [] });
+            return NextResponse.json({ prompts: [], packs: [] });
         }
 
         // 2. Scan for pack directories
@@ -21,6 +21,7 @@ export async function GET() {
         });
 
         const allPrompts: SystemPromptData[] = [];
+        const allPacks: PromptPackManifest[] = [];
 
         // 3. Process each pack
         for (const packDir of packDirs) {
@@ -34,6 +35,8 @@ export async function GET() {
             try {
                 const manifestContent = fs.readFileSync(manifestPath, 'utf8');
                 const manifest: PromptPackManifest = JSON.parse(manifestContent);
+
+                allPacks.push(manifest);
 
                 // Process prompts in manifest
                 if (manifest.prompts && Array.isArray(manifest.prompts)) {
@@ -63,8 +66,8 @@ export async function GET() {
             }
         }
 
-        // 4. Return aggregated list
-        return NextResponse.json({ prompts: allPrompts });
+        // 4. Return aggregated list and packs
+        return NextResponse.json({ prompts: allPrompts, packs: allPacks });
 
     } catch (error) {
         console.error('[Registry] Fatal error:', error);
