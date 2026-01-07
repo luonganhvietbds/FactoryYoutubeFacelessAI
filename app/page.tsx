@@ -367,12 +367,20 @@ export default function Home() {
   const processBatchJob = async (job: BatchJob, jobIndex: number, totalJobs: number): Promise<StepOutputs> => {
     const outputs: StepOutputs = {};
 
+    // Helper: Update job progress in queue
+    const updateJobProgress = (step: number, progress: string) => {
+      setBatchQueue(prev => prev.map(j =>
+        j.id === job.id ? { ...j, currentStep: step, stepProgress: progress } : j
+      ));
+      setBatchProgress({ jobIndex, totalJobs, currentStep: step, message: `Job ${jobIndex}/${totalJobs} - ${progress}` });
+    };
+
     try {
       // Step 2: Tạo Outline
-      setBatchProgress({ jobIndex, totalJobs, currentStep: 2, message: `Job ${jobIndex}/${totalJobs} - Tạo Outline...` });
       const totalOutlineBatches = Math.ceil(batchSceneCount / 5);
       let fullOutline = "";
       for (let b = 0; b < totalOutlineBatches; b++) {
+        updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches}`);
         const chunk = await createOutlineBatch(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchWordMin, batchWordMax);
         if (chunk === "END_OF_OUTLINE") break;
         fullOutline += "\n" + chunk;
@@ -380,10 +388,10 @@ export default function Home() {
       outputs[2] = fullOutline.trim();
 
       // Step 3: Viết Script
-      setBatchProgress({ jobIndex, totalJobs, currentStep: 3, message: `Job ${jobIndex}/${totalJobs} - Viết Script...` });
       const totalScriptBatches = Math.ceil(batchSceneCount / 5);
       let fullScript = "";
       for (let b = 0; b < totalScriptBatches; b++) {
+        updateJobProgress(3, `Script ${b + 1}/${totalScriptBatches}`);
         const chunk = await createScriptBatch(apiKey, outputs[2], getPromptContentById(selectedPromptIds[3], promptsLibrary), fullScript, b, batchSceneCount);
         if (chunk.includes("END_OF_SCRIPT")) { fullScript += "\n" + chunk.replace("END_OF_SCRIPT", "").trim(); break; }
         fullScript += "\n" + chunk;
@@ -391,20 +399,20 @@ export default function Home() {
       outputs[3] = fullScript.trim();
 
       // Step 4: Trích xuất Prompts
-      setBatchProgress({ jobIndex, totalJobs, currentStep: 4, message: `Job ${jobIndex}/${totalJobs} - Trích xuất Prompts...` });
       const chunks = splitScriptIntoChunks(outputs[3]);
       const jsons = [];
-      for (const chunk of chunks) {
-        jsons.push(await generatePromptsBatch(apiKey, chunk, getPromptContentById(selectedPromptIds[4], promptsLibrary)));
+      for (let i = 0; i < chunks.length; i++) {
+        updateJobProgress(4, `Prompts ${i + 1}/${chunks.length}`);
+        jsons.push(await generatePromptsBatch(apiKey, chunks[i], getPromptContentById(selectedPromptIds[4], promptsLibrary)));
       }
       outputs[4] = mergePromptJsons(jsons);
 
       // Step 5: Tách Voice Over
-      setBatchProgress({ jobIndex, totalJobs, currentStep: 5, message: `Job ${jobIndex}/${totalJobs} - Tách Voice Over...` });
+      updateJobProgress(5, 'Voice Over...');
       outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), batchWordMin, batchWordMax);
 
       // Step 6: Tạo Metadata
-      setBatchProgress({ jobIndex, totalJobs, currentStep: 6, message: `Job ${jobIndex}/${totalJobs} - Tạo Metadata...` });
+      updateJobProgress(6, 'Metadata...');
       outputs[6] = await createMetadata(apiKey, outputs[3], getPromptContentById(selectedPromptIds[6], promptsLibrary));
 
       return outputs;
@@ -735,7 +743,7 @@ export default function Home() {
                   <input
                     type="range"
                     min="5"
-                    max="100"
+                    max="200"
                     value={batchSceneCount}
                     onChange={e => setBatchSceneCount(Number(e.target.value))}
                     className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
@@ -914,15 +922,33 @@ export default function Home() {
 
                 {/* Queue List */}
                 <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
-                  {/* Pending Jobs */}
+                  {/* Pending/Processing Jobs */}
                   {batchQueue.map((job, idx) => (
-                    <div key={job.id} className="bg-slate-900 p-3 rounded border border-slate-700">
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-400">
+                    <div key={job.id} className={`p-3 rounded border ${job.status === 'processing'
+                      ? 'bg-amber-900/20 border-amber-500'
+                      : 'bg-slate-900 border-slate-700'
+                      }`}>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className={job.status === 'processing' ? 'text-amber-400 font-bold' : 'text-slate-400'}>
                           {job.status === 'processing' ? '🔄' : '⏳'} Job {idx + 1}
                         </span>
-                        <span className="text-xs text-slate-500">{job.input.slice(0, 50)}...</span>
+                        <span className="text-xs text-slate-500 truncate max-w-[200px]">{job.input.slice(0, 40)}...</span>
                       </div>
+                      {/* Per-job progress display */}
+                      {job.status === 'processing' && job.currentStep && (
+                        <div className="mt-2">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-amber-300">Step {job.currentStep}/6</span>
+                            <span className="text-amber-400">{job.stepProgress}</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all duration-300"
+                              style={{ width: `${((job.currentStep - 1) / 5) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
 

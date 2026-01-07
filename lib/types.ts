@@ -49,4 +49,8 @@ export interface BatchJob {
     status: 'pending' | 'processing' | 'completed' | 'failed';
     outputs: StepOutputs; // Lưu kết quả các bước 2-6
     error?: string;
+    // Phase 10: Per-job progress tracking
+    currentStep?: number; // 2-6
+    stepProgress?: string; // e.g. "Outline 3/10", "Script 2/10"
+    createdAt?: number;
 }
