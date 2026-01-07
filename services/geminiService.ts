@@ -1,5 +1,10 @@
 
 import { GoogleGenAI } from "@google/genai";
+import {
+    countVietnameseWords,
+    extractVoiceoverContent,
+    parseScenes as parseSceneBlocks
+} from '@/lib/wordCounter';
 
 // Hàm xử lý chung
 const callGemini = async (apiKey: string, systemPrompt: string, userMessage: string, useSearch: boolean = false) => {
@@ -59,7 +64,8 @@ export const getNewsAndEvents = async (apiKey: string, keyword: string, systemPr
     return callGemini(apiKey, systemPrompt, `Chủ đề/Từ khóa cần tìm kiếm: "${keyword}"`, true);
 };
 
-// Bước 2: Tạo Dàn Ý - CẬP NHẬT: Batching 5 scenes/call + Strict Word Count
+// Bước 2: Tạo Dàn Ý - V3: Post-Correction Engine + Deterministic Word Counter
+
 export const createOutlineBatch = async (
     apiKey: string,
     newsData: string,
@@ -70,7 +76,7 @@ export const createOutlineBatch = async (
     minWords: number,
     maxWords: number
 ): Promise<string> => {
-    const SCENES_PER_BATCH = 5; // Reduced to 5 for precision
+    const SCENES_PER_BATCH = 5;
     const startScene = batchIndex * SCENES_PER_BATCH + 1;
     let endScene = startScene + SCENES_PER_BATCH - 1;
     if (endScene > sceneCount) endScene = sceneCount;
@@ -93,64 +99,103 @@ NHIỆM VỤ HIỆN TẠI (Batch scenes ${startScene} -> ${endScene}):
 Hãy lập tiếp dàn ý chi tiết cho các cảnh từ **Scene ${startScene}** đến **Scene ${endScene}**.
 Tổng số cảnh dự kiến: ${sceneCount}.
 
-YÊU CẦU QUAN TRỌNG VỀ VOICE OVER (Lời dẫn):
-1. Mỗi cảnh PHẢI có mục "**Lời dẫn:**".
-2. Độ dài Lời dẫn PHẢI Tuyệt Đối nằm trong khoảng **${minWords} - ${maxWords} từ**.
-3. Cuối mỗi Lời dẫn, hãy ghi chú số từ thực tế trong ngoặc đơn. Ví dụ: (19 từ).
+===== QUY TẮC ĐẾM TỪ TIẾNG VIỆT (BẮT BUỘC TUÂN THỦ) =====
+Mỗi ÂM TIẾT tách biệt bằng KHOẢNG TRẮNG = 1 TỪ.
+Ví dụ đếm CHUẨN:
+  • "Mẹ kế không phải ác quỷ" = 6 từ (6 âm tiết riêng biệt).
+  • "trong thời kỳ khủng hoảng" = 5 từ.
+  • "bà ta là nhà quản lý nguồn lực" = 8 từ.
+KHÔNG ĐƯỢC gộp từ ghép thành 1 đơn vị (ví dụ: "nhà quản lý" = 3 từ, KHÔNG PHẢI 1).
+===========================================================
 
-${feedback ? `LƯU Ý: Lần sinh trước của bạn đã bị từ chối vì lý do sau: ${feedback}. Hãy sửa lại ngay lập tức.` : ""}
+YÊU CẦU VỀ LỜI DẪN (VOICE OVER):
+1. Mỗi cảnh PHẢI có mục "**Lời dẫn:**".
+2. Độ dài PHẢI trong khoảng **${minWords} - ${maxWords} âm tiết** (tính theo QUY TẮC trên).
+3. Cuối mỗi Lời dẫn, ghi số từ thực tế. Ví dụ: (18 từ).
+
+${feedback ? `
+⚠️ LƯU Ý QUAN TRỌNG (LẦN THỬ ${attempts + 1}/${MAX_ATTEMPTS}):
+Lần sinh trước bị TỪ CHỐI vì:
+${feedback}
+HÃY SỬA LẠI NGAY. Nếu quá dài: CẮT BỚT. Nếu quá ngắn: BỔ SUNG.
+` : ""}
 
 QUY TẮC FORMAT:
 Scene ${startScene}: [Tên cảnh]
-Hình ảnh: [Mô tả hình ảnh]
+Hình ảnh: [Mô tả hình ảnh chi tiết]
 Lời dẫn: [Nội dung lời dẫn] (Số từ)
 
 ... (tiếp tục đến Scene ${endScene})
 `;
 
         try {
-            const response = await callGemini(apiKey, systemPrompt, userPrompt);
+            const rawResponse = await callGemini(apiKey, systemPrompt, userPrompt);
 
-            // VALIDATION LOGIC
+            // ========== POST-CORRECTION ENGINE ==========
+            // Split response into scene blocks
+            const sceneBlocks = rawResponse.split(/(?=Scene \d+:)/i).filter(block => /^Scene \d+:/i.test(block.trim()));
+
             const validationErrors: string[] = [];
-            // Regex to find "Lời dẫn: ... (X từ)" or just the content
-            // Simple split by "Scene" to validate each
-            const sceneChunks = response.split(/Scene \d+:/).slice(1); // ignore pre-text
+            const correctedScenes: string[] = [];
 
-            if (sceneChunks.length !== (endScene - startScene + 1)) {
-                // Relaxed check: if we got close to correct number of scenes, proceed, else strict
-                // validationErrors.push("Incorrect number of scenes generated.");
-            }
-
-            sceneChunks.forEach((chunk, idx) => {
+            sceneBlocks.forEach((block, idx) => {
                 const currentSceneNum = startScene + idx;
-                const match = chunk.match(/Lời dẫn:\s*([\s\S]*?)(?:\(\d+\s*từ\)|$)/i);
-                if (match) {
-                    const content = match[1].trim();
-                    // Count words (simple space split)
-                    const wordCount = content.split(/\s+/).filter(w => w.length > 0).length;
-                    if (wordCount < minWords || wordCount > maxWords) {
-                        validationErrors.push(`Scene ${currentSceneNum} has ${wordCount} words (Required: ${minWords}-${maxWords})`);
+
+                // Extract voiceover content (ignoring AI's annotation)
+                const voMatch = block.match(/Lời dẫn:\s*([\s\S]*?)(?:\s*\(\d+\s*từ\)\s*)?(?=\n\n|$)/i);
+
+                if (voMatch && voMatch[1]) {
+                    // Clean content: remove any existing annotations
+                    const rawContent = voMatch[1]
+                        .replace(/\(\d+\s*từ\)/g, '')
+                        .replace(/\*\*/g, '')
+                        .trim();
+
+                    // COUNT WITH OUR DETERMINISTIC COUNTER
+                    const actualWordCount = countVietnameseWords(rawContent);
+
+                    // Validate against constraints
+                    if (actualWordCount < minWords || actualWordCount > maxWords) {
+                        validationErrors.push(
+                            `Scene ${currentSceneNum}: ${actualWordCount} từ (cần ${minWords}-${maxWords})`
+                        );
                     }
+
+                    // Correct the annotation with our accurate count
+                    const correctedBlock = block.replace(
+                        /Lời dẫn:\s*[\s\S]*?(?:\(\d+\s*từ\))?(?=\n\n|$)/i,
+                        `Lời dẫn: ${rawContent} (${actualWordCount} từ)`
+                    );
+
+                    correctedScenes.push(correctedBlock);
                 } else {
-                    validationErrors.push(`Scene ${currentSceneNum} missing 'Lời dẫn' field.`);
+                    validationErrors.push(`Scene ${currentSceneNum}: Thiếu mục 'Lời dẫn'`);
+                    correctedScenes.push(block); // Keep original if no voiceover found
                 }
             });
 
+            // Check if we have the expected number of scenes
+            const expectedSceneCount = endScene - startScene + 1;
+            if (sceneBlocks.length < expectedSceneCount) {
+                validationErrors.push(`Thiếu ${expectedSceneCount - sceneBlocks.length} scene(s)`);
+            }
+
+            // If validation passed, return corrected response
             if (validationErrors.length === 0) {
-                return response; // Success!
+                console.log(`✅ Batch ${batchIndex + 1} passed validation on attempt ${attempts + 1}`);
+                return correctedScenes.join('\n\n');
             } else {
-                console.warn(`Attempt ${attempts + 1} failed validation:`, validationErrors);
-                feedback = validationErrors.join("; ");
+                console.warn(`⚠️ Attempt ${attempts + 1} failed:`, validationErrors);
+                feedback = validationErrors.join('\n');
                 attempts++;
             }
         } catch (e) {
-            console.error("Gemini Error:", e);
-            attempts++; // Retry on API error too
+            console.error("Gemini API Error:", e);
+            attempts++;
         }
     }
 
-    throw new Error(`Failed to generate valid scenes ${startScene}-${endScene} after ${MAX_ATTEMPTS} attempts. Last error: ${feedback}`);
+    throw new Error(`❌ Failed to generate valid scenes ${startScene}-${endScene} after ${MAX_ATTEMPTS} attempts.\nLast errors:\n${feedback}`);
 };
 
 // Bước 3: Tạo Kịch Bản Chi Tiết - CẬP NHẬT: Batching chính xác theo số cảnh
