@@ -586,21 +586,166 @@ export default function Home() {
         </div>
 
         {isBatchMode ? (
-          /* BATCH UI */
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-              <h2 className="text-xl font-bold text-amber-400 mb-4">Inputs</h2>
-              <textarea value={batchInputRaw} onChange={e => setBatchInputRaw(e.target.value)} className="w-full h-32 bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white mb-4" placeholder="Input 1...&#10;&#10;Input 2..." />
-              <button onClick={handleAddToQueue} className="w-full py-2 bg-amber-700 rounded text-white font-bold">Add to Queue</button>
+          /* ========== ISOLATED BATCH MODE UI ==========  */
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-amber-600 to-orange-600 p-4 rounded-lg">
+              <h2 className="text-2xl font-bold text-white">📦 Batch Mode - Xử Lý Hàng Loạt</h2>
+              <p className="text-amber-100 text-sm mt-1">Viết nhiều kịch bản cùng lúc (Steps 2-6)</p>
             </div>
-            <div className="col-span-2 space-y-4">
-              <div className="flex justify-between items-center bg-slate-800 p-4 rounded border border-slate-700">
-                <div>Queue: {batchQueue.length} | Done: {processedJobs.length}</div>
-                <button onClick={runBatchQueue} disabled={isProcessingBatch} className="px-6 py-2 bg-green-600 rounded font-bold text-white">RUN BATCH</button>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* LEFT COLUMN: Config & Input */}
+              <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 space-y-4">
+                <h3 className="text-lg font-bold text-amber-400 mb-3">⚙️ Cấu Hình</h3>
+
+                {/* Scene Count */}
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase flex justify-between mb-2">
+                    <span>Số Cảnh</span>
+                    <span className="text-sky-400">{batchSceneCount} scenes</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="5"
+                    max="100"
+                    value={batchSceneCount}
+                    onChange={e => setBatchSceneCount(Number(e.target.value))}
+                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+
+                {/* Word Count Min/Max */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Min Words</label>
+                    <input
+                      type="number"
+                      min="5"
+                      max="100"
+                      value={batchWordMin}
+                      onChange={e => setBatchWordMin(Number(e.target.value))}
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Max Words</label>
+                    <input
+                      type="number"
+                      min="10"
+                      max="200"
+                      value={batchWordMax}
+                      onChange={e => setBatchWordMax(Number(e.target.value))}
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Delay Config */}
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">Delay Giữa Jobs (giây)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={batchDelaySeconds}
+                    onChange={e => setBatchDelaySeconds(Number(e.target.value))}
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm"
+                  />
+                </div>
+
+                <hr className="border-slate-700" />
+
+                {/* Input Textarea */}
+                <div>
+                  <label className="text-sm font-bold text-white mb-2 block">Nhập Kịch Bản</label>
+                  <textarea
+                    value={batchInputRaw}
+                    onChange={e => setBatchInputRaw(e.target.value)}
+                    rows={8}
+                    placeholder="Kịch bản 1: Nội dung...&#10;&#10;Kịch bản 2: Nội dung khác...&#10;&#10;(Cách nhau 1 dòng trống)"
+                    className="w-full bg-slate-900 border border-slate-600 rounded p-3 text-sm text-white font-mono"
+                  />
+                </div>
+
+                <button
+                  onClick={handleBatchParseInput}
+                  disabled={isProcessingBatch}
+                  className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  ➕ Thêm Vào Hàng Chờ
+                </button>
               </div>
-              <div className="h-96 bg-slate-900 rounded border border-slate-700 p-4 overflow-auto">
-                {batchQueue.map((j, i) => <div key={j.id} className="p-2 border-b border-slate-800 text-sm text-slate-400">#{i + 1} {j.status}</div>)}
-                {processedJobs.map((j, i) => <div key={j.id} className="p-2 border-b border-slate-800 text-sm text-green-400">DONE: {j.id}</div>)}
+
+              {/* RIGHT COLUMNS: Queue & Results */}
+              <div className="lg:col-span-2 bg-slate-800 p-6 rounded-lg border border-slate-700 space-y-4">
+                {/* Header with Run Button */}
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-bold text-white">
+                    📋 Hàng Chờ: {batchQueue.length} | ✅ Hoàn Thành: {processedJobs.filter(j => j.status === 'completed').length}
+                  </h3>
+                  <button
+                    onClick={handleRunBatchQueue}
+                    disabled={isProcessingBatch || batchQueue.length === 0}
+                    className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  >
+                    {isProcessingBatch ? '🔄 Đang Chạy...' : '▶️ RUN BATCH'}
+                  </button>
+                </div>
+
+                {/* Progress Indicator */}
+                {batchProgress && (
+                  <div className="bg-slate-900 p-4 rounded border border-amber-500">
+                    <p className="text-amber-400 font-bold mb-2">{batchProgress.message}</p>
+                    <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all"
+                        style={{ width: `${(batchProgress.currentStep / 6) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Queue List */}
+                <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
+                  {/* Pending Jobs */}
+                  {batchQueue.map((job, idx) => (
+                    <div key={job.id} className="bg-slate-900 p-3 rounded border border-slate-700">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400">
+                          {job.status === 'processing' ? '🔄' : '⏳'} Job {idx + 1}
+                        </span>
+                        <span className="text-xs text-slate-500">{job.input.slice(0, 50)}...</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Processed Jobs */}
+                  {processedJobs.map((job, idx) => (
+                    <div key={job.id} className={`p-3 rounded border ${job.status === 'completed'
+                        ? 'bg-green-900/20 border-green-600'
+                        : 'bg-red-900/20 border-red-600'
+                      }`}>
+                      <div className="flex justify-between items-center">
+                        <div className="flex-1">
+                          <span className={job.status === 'completed' ? 'text-green-400' : 'text-red-400'}>
+                            {job.status === 'completed' ? '✅' : '❌'} Job {idx + 1}
+                          </span>
+                          {job.error && <p className="text-xs text-red-300 mt-1">{job.error}</p>}
+                        </div>
+
+                        {job.status === 'completed' && (
+                          <button
+                            onClick={() => handleDownloadBatchJob(job)}
+                            className="ml-4 bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm font-bold text-white flex items-center gap-2 transition"
+                          >
+                            <DownloadIcon className="w-4 h-4" /> ZIP
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
