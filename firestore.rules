@@ -2,22 +2,31 @@ rules_version = '2';
 
 // ⚠️ CẢNH BÁO: Rules này MỞ TOÀN BỘ CHO MỤC ĐÍCH TEST.
 // BẤT KỲ AI cũng có thể đọc và ghi dữ liệu.
-// Sau khi test xong, HÃY THÊM XÁC THỰC (Authentication).
 
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Prompt Packs - MỞ ĐỌC/GHI CHO TẤT CẢ
+    // Prompt Packs
     match /prompt_packs/{packId} {
       allow read, write: if true;
     }
 
-    // System Settings - MỞ ĐỌC/GHI CHO TẤT CẢ
+    // System Settings
     match /system_settings/{docId} {
       allow read, write: if true;
     }
 
-    // Fallback: Mở toàn bộ collection khác (CHỈ DÙNG CHO TEST)
+    // Projects (New)
+    match /projects/{projectId} {
+      allow read, write: if true;
+    }
+
+    // Users (New)
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Fallback
     match /{document=**} {
       allow read, write: if true;
     }

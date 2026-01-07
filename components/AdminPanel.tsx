@@ -143,7 +143,37 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
             await batch.commit();
             setInitLog(prev => [...prev, `🔥 Đã tải ${validCount} bộ Prompt lên Cloud.`]);
 
-            // 3. Set system as initialized
+            // 4. Initialize 'users' collection with current Admin
+            const userRef = doc(db, "users", "admin_default");
+            const userSnap = await getDoc(userRef);
+            if (!userSnap.exists()) {
+                await setDoc(userRef, {
+                    uid: "admin_default",
+                    email: "admin@system.local",
+                    role: "admin",
+                    credits: 9999,
+                    createdAt: new Date().toISOString()
+                });
+                setInitLog(prev => [...prev, `👤 Đã tạo User Admin mặc định.`]);
+            }
+
+            // 5. Initialize 'projects' collection with a sample project
+            const projectRef = doc(db, "projects", "sample_project");
+            const projectSnap = await getDoc(projectRef);
+            if (!projectSnap.exists()) {
+                await setDoc(projectRef, {
+                    name: "Dự án Mẫu: Kịch bản AI",
+                    description: "Dự án mẫu để kiểm tra hệ thống.",
+                    ownerId: "admin_default",
+                    status: "active",
+                    stepsData: {},
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                });
+                setInitLog(prev => [...prev, `📁 Đã tạo Dự án Mẫu (Projects Collection).`]);
+            }
+
+            // 6. Set system as initialized
             const configRef = doc(db, "system_settings", "config");
             await setDoc(configRef, {
                 isInitialized: true,
