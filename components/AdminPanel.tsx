@@ -3,70 +3,76 @@
 import React, { useState, useEffect } from 'react';
 import { PromptPackManifest, SystemPromptData } from '@/lib/types';
 import { RegistryService } from '@/lib/prompt-registry/client-registry';
+// Icons
 import EditIcon from './icons/EditIcon';
 import SaveIcon from './icons/SaveIcon';
 import TrashIcon from './icons/TrashIcon';
 import CheckIcon from './icons/CheckIcon';
 import LoadingSpinnerIcon from './icons/LoadingSpinnerIcon';
+import LogOutIcon from './icons/LogOutIcon';
 
 interface AdminPanelProps {
-    prompts: SystemPromptData[];
+    prompts: SystemPromptData[]; // Currently loaded prompts (merged)
     onUpdatePrompts: (prompts: SystemPromptData[]) => void;
     onClose: () => void;
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClose }) => {
+    // --- STATE ---
     const [packs, setPacks] = useState<PromptPackManifest[]>([]);
     const [isLoadingPacks, setIsLoadingPacks] = useState(true);
-    const [activeTab, setActiveTab] = useState<'packs' | 'prompts'>('packs');
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'packs' | 'prompts'>('packs');
     const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
 
     // Edit State
     const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
     const [editForm, setEditForm] = useState<Partial<SystemPromptData>>({});
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
-    // Fetch Packs on Mount
+    // Stats
+    const totalEditablePrompts = prompts.length;
+    const totalPacks = packs.length;
+
+    // --- EFFECTS ---
     useEffect(() => {
         const load = async () => {
             setIsLoadingPacks(true);
-            const data = await RegistryService.fetchFullRegistry();
-            setPacks(data.packs);
-            setIsLoadingPacks(false);
+            try {
+                const data = await RegistryService.fetchFullRegistry();
+                setPacks(data.packs);
+            } catch (e) { console.error(e); }
+            finally { setIsLoadingPacks(false); }
         };
         load();
     }, []);
 
     // --- ACTIONS ---
     const handleActivatePack = (packId: string) => {
-        const pack = packs.find(p => p.id === packId);
-        if (!pack) return;
-
-        // Logic: Với mỗi bước có trong pack, tìm prompt ID tương ứng đã được load vào library
-        // Tuy nhiên, prompt ID trong library có thể là prompt CUSTOM (nếu user đã edit).
-        // Ta cần tìm prompt trong library mà có `packId === packId` HOẶC `id === manifest.prompt.id`.
-
-        // Vì 'prompts' prop đã chứa merged prompts.
-        // Ta chỉ cần thông báo cho user biết các ID tương ứng để họ chọn?
-        // AdminPanel không control `selectedPromptIds` của Parent.
-        // Update: AdminPanel chỉ quản lý Library Content (CRUD).
-        // Việc "Activate" (Chọn dùng) thuộc về main UI (Select dropdown).
-
-        // Tuy nhiên user muốn "Quản lý chuỗi 1-6".
-        alert("Tính năng 'Kích hoạt nhanh' sẽ được cập nhật ở giao diện chính. Tại đây bạn có thể chỉnh sửa nội dung của Pack.");
+        alert("Vui lòng sử dụng 'Workforce Selector' ở trang chủ để kích hoạt Pack này cho toàn bộ hệ thống.");
     };
 
     const handleEditPrompt = (prompt: SystemPromptData) => {
         setEditingPromptId(prompt.id);
         setEditForm({ ...prompt });
+        setSaveStatus('idle');
     };
 
     const handleSavePrompt = () => {
         if (!editingPromptId) return;
-        const updatedPrompts = prompts.map(p =>
-            p.id === editingPromptId ? { ...p, ...editForm } as SystemPromptData : p
-        );
-        onUpdatePrompts(updatedPrompts);
-        setEditingPromptId(null);
+        setSaveStatus('saving');
+
+        // Simulate network delay for UX
+        setTimeout(() => {
+            const updatedPrompts = prompts.map(p =>
+                p.id === editingPromptId ? { ...p, ...editForm } as SystemPromptData : p
+            );
+            onUpdatePrompts(updatedPrompts);
+            setSaveStatus('saved');
+            setTimeout(() => {
+                setEditingPromptId(null);
+                setSaveStatus('idle');
+            }, 500);
+        }, 600);
     };
 
     const handleAddCustom = () => {
@@ -79,170 +85,291 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
         setEditForm(newPrompt);
     };
 
-    // Helper to get prompt for a specific pack/step
-    const getPromptForPackStep = (packId: string, stepId: number) => {
-        // Tìm trong library hiện tại
-        return prompts.find(p => p.packId === packId && p.stepId === stepId)
-            || prompts.find(p => p.id.startsWith(`S${stepId}_`) && p.packId === packId); // Fallback logic
-    };
+    // --- RENDERERS ---
+
+    const SidebarItem = ({ id, label, icon, isActive, onClick }: any) => (
+        <button
+            onClick={onClick}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all duration-200 group relative
+            ${isActive
+                    ? 'bg-gradient-to-r from-sky-600/90 to-indigo-600/90 text-white shadow-lg shadow-sky-900/20'
+                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'}`}
+        >
+            {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white/30 rounded-r-full"></div>}
+            <span className={`transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`}>{icon}</span>
+            <span>{label}</span>
+        </button>
+    );
 
     return (
-        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-slate-900 w-full max-w-7xl h-[95vh] rounded-2xl border border-slate-700 shadow-2xl flex flex-col overflow-hidden">
-                {/* Header */}
-                <div className="flex justify-between items-center px-8 py-5 border-b border-slate-800 bg-slate-800/50">
-                    <div>
-                        <h2 className="text-2xl font-bold bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">
-                            AI Workforce Admin
-                        </h2>
-                        <p className="text-slate-400 text-xs mt-1">Quản lý và Tùy chỉnh các bộ Prompt (Packs)</p>
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6 lg:p-8 animate-in fade-in duration-300">
+            <div className="bg-slate-900 w-full max-w-[1400px] h-[90vh] rounded-3xl border border-slate-700/50 shadow-2xl shadow-sky-900/10 flex flex-col overflow-hidden ring-1 ring-white/5">
+
+                {/* --- HEADER --- */}
+                <div className="flex justify-between items-center px-8 py-5 border-b border-slate-800 bg-slate-900/50 backdrop-blur-xl z-10">
+                    <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 bg-gradient-to-br from-sky-500 to-indigo-500 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg">
+                            A
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-bold text-white tracking-tight">
+                                Admin Dashboard
+                            </h2>
+                            <p className="text-slate-400 text-xs">Prompt Marketplace & System Configuration</p>
+                        </div>
                     </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white px-4 py-2 hover:bg-slate-800 rounded transition-colors">✕ Đóng</button>
+                    <div className="flex items-center gap-4">
+                        <div className="px-3 py-1 bg-slate-800 rounded-full border border-slate-700 text-xs text-slate-400 font-mono">
+                            v2.1.0-RC
+                        </div>
+                        <button onClick={onClose} className="group p-2 hover:bg-red-500/10 rounded-full transition-colors" title="Thoát">
+                            <LogOutIcon className="w-5 h-5 text-slate-500 group-hover:text-red-400" />
+                        </button>
+                    </div>
                 </div>
 
-                {/* Sidebar + Content */}
+                {/* --- MAIN LAYOUT --- */}
                 <div className="flex flex-grow overflow-hidden">
-                    {/* Sidebar */}
-                    <div className="w-64 border-r border-slate-800 bg-slate-900/50 flex flex-col">
-                        <div className="p-4 space-y-2">
-                            <button
-                                onClick={() => { setActiveTab('packs'); setSelectedPackId(null); }}
-                                className={`w-full text-left px-4 py-3 rounded-lg font-medium transition-all ${activeTab === 'packs' && !selectedPackId ? 'bg-sky-600 text-white shadow-lg shadow-sky-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                            >
-                                📦 Installed Packs
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('prompts')}
-                                className={`w-full text-left px-4 py-3 rounded-lg font-medium transition-all ${activeTab === 'prompts' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                            >
-                                📝 All Prompts (Flat)
-                            </button>
-                        </div>
 
-                        <div className="mt-auto p-4 border-t border-slate-800">
-                            <p className="text-xs text-slate-500 text-center">Version 2.0 (Marketplace Ready)</p>
+                    {/* SIDEBAR */}
+                    <div className="w-72 border-r border-slate-800/50 bg-slate-900/30 flex flex-col p-6 gap-2 backdrop-blur-sm">
+                        <div className="mb-2 px-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Management</div>
+
+                        <SidebarItem
+                            id="packs"
+                            label="Prompt Packs"
+                            icon="📦"
+                            isActive={activeTab === 'packs'}
+                            onClick={() => { setActiveTab('packs'); setSelectedPackId(null); }}
+                        />
+                        <SidebarItem
+                            id="prompts"
+                            label="All Prompts"
+                            icon="📝"
+                            isActive={activeTab === 'prompts'}
+                            onClick={() => setActiveTab('prompts')}
+                        />
+
+                        <div className="border-t border-slate-800/50 my-4 mx-2"></div>
+
+                        <div className="mb-2 px-2 text-xs font-bold text-slate-500 uppercase tracking-wider">System Stats</div>
+                        <div className="grid grid-cols-2 gap-3 px-2">
+                            <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                                <div className="text-2xl font-bold text-sky-400">{totalPacks}</div>
+                                <div className="text-[10px] text-slate-500">Installed Packs</div>
+                            </div>
+                            <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                                <div className="text-2xl font-bold text-indigo-400">{totalEditablePrompts}</div>
+                                <div className="text-[10px] text-slate-500">Active Prompts</div>
+                            </div>
                         </div>
                     </div>
 
-                    {/* Main View */}
-                    <div className="flex-grow bg-slate-950 overflow-auto custom-scrollbar relative">
-                        {/* EDIT MODAL OVERLAY */}
+                    {/* CONTENT AREA */}
+                    <div className="flex-grow bg-slate-950 relative overflow-hidden">
+
+                        {/* DECORATIVE BACKGROUND */}
+                        <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-sky-900/10 to-transparent pointer-events-none"></div>
+
+                        {/* --- EDIT MODAL (Overlay) --- */}
                         {editingPromptId && (
-                            <div className="absolute inset-0 z-10 bg-black/80 flex items-center justify-center p-8">
-                                <div className="bg-slate-900 border border-slate-700 w-full max-w-4xl h-full flex flex-col rounded-xl shadow-2xl">
-                                    <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800">
-                                        <h3 className="font-bold text-sky-400">Chỉnh sửa Prompt: <span className="text-white">{editForm.name}</span></h3>
-                                        <div className="flex gap-2">
-                                            <button onClick={handleSavePrompt} className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded font-bold flex items-center gap-2"><SaveIcon className="w-4 h-4" /> Lưu</button>
-                                            <button onClick={() => setEditingPromptId(null)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded">Hủy</button>
+                            <div className="absolute inset-0 z-20 bg-black/60 backdrop-blur-sm flex items-center justify-center p-8 animate-in fade-in duration-200">
+                                <div className="bg-slate-900 border border-slate-700 w-full max-w-5xl h-[85%] flex flex-col rounded-2xl shadow-2xl ring-1 ring-white/10 animate-in zoom-in-95 duration-200">
+                                    {/* Modal Header */}
+                                    <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900 rounded-t-2xl">
+                                        <div>
+                                            <h3 className="font-bold text-lg text-white flex items-center gap-2">
+                                                <span className="text-sky-500">EDIT:</span> {editForm.name}
+                                            </h3>
+                                            <p className="text-xs text-slate-500 mt-1 font-mono">{editingPromptId}</p>
+                                        </div>
+                                        <div className="flex gap-3">
+                                            <button
+                                                onClick={handleSavePrompt}
+                                                disabled={saveStatus === 'saving'}
+                                                className={`px-5 py-2 rounded-lg font-bold flex items-center gap-2 transition-all transform active:scale-95
+                                                    ${saveStatus === 'saved' ? 'bg-green-600 text-white' : 'bg-sky-600 hover:bg-sky-500 text-white shadow-lg shadow-sky-900/20'}`}
+                                            >
+                                                {saveStatus === 'saving' ? <LoadingSpinnerIcon className="animate-spin w-4 h-4" /> : saveStatus === 'saved' ? <CheckIcon className="w-4 h-4" /> : <SaveIcon className="w-4 h-4" />}
+                                                {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : 'Save Changes'}
+                                            </button>
+                                            <button onClick={() => setEditingPromptId(null)} className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors border border-slate-700">Cancel</button>
                                         </div>
                                     </div>
-                                    <div className="flex-grow p-4 overflow-hidden flex flex-col gap-4">
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="text-xs text-slate-500 block mb-1">Tên Prompt</label>
-                                                <input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-sky-500 outline-none" />
+
+                                    {/* Modal Body */}
+                                    <div className="flex-grow p-6 flex flex-col gap-6 overflow-hidden">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold text-slate-500 uppercase">Interactive Name</label>
+                                                <input
+                                                    value={editForm.name}
+                                                    onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                                                    className="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-slate-600"
+                                                    placeholder="Enter prompt friendly name..."
+                                                />
                                             </div>
-                                            <div>
-                                                <label className="text-xs text-slate-500 block mb-1">Step ID</label>
-                                                <select value={editForm.stepId} onChange={e => setEditForm({ ...editForm, stepId: Number(e.target.value) })} className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white">
-                                                    {[1, 2, 3, 4, 5, 6].map(i => <option key={i} value={i}>Bước {i}</option>)}
-                                                </select>
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold text-slate-500 uppercase">Target Step (Logic)</label>
+                                                <div className="relative">
+                                                    <select
+                                                        value={editForm.stepId}
+                                                        onChange={e => setEditForm({ ...editForm, stepId: Number(e.target.value) })}
+                                                        className="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white appearance-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none transition-all cursor-pointer"
+                                                    >
+                                                        {[1, 2, 3, 4, 5, 6].map(i => <option key={i} value={i}>Step {i}: {i === 1 ? 'News' : i === 2 ? 'Outline' : i === 3 ? 'Script' : i === 4 ? 'Visuals' : i === 5 ? 'Voice' : 'Metadata'}</option>)}
+                                                    </select>
+                                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs">▼</div>
+                                                </div>
                                             </div>
                                         </div>
-                                        <div className="flex-grow flex flex-col">
-                                            <label className="text-xs text-slate-500 block mb-1">Nội dung Prompt (System Instruction)</label>
-                                            <textarea value={editForm.content} onChange={e => setEditForm({ ...editForm, content: e.target.value })} className="flex-grow w-full bg-slate-800 border border-slate-700 rounded p-4 font-mono text-sm text-slate-300 leading-relaxed custom-scrollbar focus:border-sky-500 outline-none resize-none"></textarea>
+
+                                        <div className="flex-grow flex flex-col space-y-1">
+                                            <label className="text-xs font-bold text-slate-500 uppercase flex justify-between">
+                                                <span>System Instruction (Prompt Content)</span>
+                                                <span className="text-xs text-sky-500 cursor-pointer hover:underline">Copy Template</span>
+                                            </label>
+                                            <div className="relative flex-grow group">
+                                                <textarea
+                                                    value={editForm.content}
+                                                    onChange={e => setEditForm({ ...editForm, content: e.target.value })}
+                                                    className="w-full h-full bg-slate-950 border border-slate-800 rounded-lg p-5 font-mono text-sm text-slate-300 leading-relaxed custom-scrollbar focus:border-sky-500/50 focus:ring-1 focus:ring-sky-500/50 outline-none resize-none shadow-inner"
+                                                    padding-left="2"
+                                                    spellCheck={false}
+                                                ></textarea>
+                                                <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800 text-slate-400 text-[10px] px-2 py-1 rounded border border-slate-700 pointer-events-none">
+                                                    {editForm.content?.length} characters
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        <div className="p-8">
-                            {/* TAB: PACKS */}
+                        <div className="h-full overflow-y-auto custom-scrollbar p-8">
+
+                            {/* --- TAB: PACKS --- */}
                             {activeTab === 'packs' && (
                                 <>
                                     {!selectedPackId ? (
-                                        // LIST PACKS
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                            {isLoadingPacks && <div className="col-span-3 text-center py-20 text-slate-500"><LoadingSpinnerIcon className="inline animate-spin mr-2" /> Đang tải dữ liệu...</div>}
-                                            {packs.map(pack => (
-                                                <div key={pack.id} onClick={() => setSelectedPackId(pack.id)} className="group bg-slate-900 border border-slate-800 hover:border-sky-500/50 rounded-xl p-6 cursor-pointer transition-all hover:shadow-2xl hover:shadow-sky-900/20 relative overflow-hidden">
-                                                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-20 transition-opacity">
-                                                        <span className="text-9xl font-black text-white">P</span>
-                                                    </div>
-                                                    <div className="relative z-10">
-                                                        <div className="flex justify-between items-start mb-4">
-                                                            <span className="text-xs font-mono text-sky-500 bg-sky-900/20 px-2 py-1 rounded border border-sky-900/50">v{pack.version}</span>
-                                                            <span className="text-xs text-slate-500">{pack.author}</span>
-                                                        </div>
-                                                        <h3 className="text-xl font-bold text-white mb-2 group-hover:text-sky-400 transition-colors">{pack.name}</h3>
-                                                        <p className="text-sm text-slate-400 line-clamp-3 mb-6 h-10">{pack.description || "Không có mô tả."}</p>
-                                                        <div className="flex items-center gap-2 text-xs text-slate-500 border-t border-slate-800 pt-4">
-                                                            <span>{pack.prompts?.length || 0} Steps</span>
-                                                            <span>•</span>
-                                                            <span>Click để quản lý</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
+                                        <div className="animate-in slide-in-from-bottom-4 duration-500">
+                                            <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                                                <span className="bg-clip-text text-transparent bg-gradient-to-r from-sky-400 to-indigo-400">Installed Workforce Packs</span>
+                                                <span className="bg-slate-800 text-slate-400 text-sm px-2 py-1 rounded-full">{packs.length}</span>
+                                            </h2>
 
-                                            {/* Create New Pack Placeholder */}
-                                            <div className="border border-dashed border-slate-800 hover:border-slate-600 rounded-xl p-6 flex flex-col items-center justify-center text-slate-500 hover:text-slate-300 transition-colors cursor-not-allowed bg-slate-900/30">
-                                                <span className="text-4xl mb-4 text-slate-700">+</span>
-                                                <span className="font-bold">Tạo Pack Mới</span>
-                                                <span className="text-xs mt-2 text-slate-600">(Comming Soon)</span>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                                                {/* Loading State */}
+                                                {isLoadingPacks && [1, 2, 3].map(i => (
+                                                    <div key={i} className="bg-slate-900/50 rounded-2xl h-48 animate-pulse border border-slate-800"></div>
+                                                ))}
+
+                                                {/* Pack Cards */}
+                                                {packs.map(pack => (
+                                                    <div
+                                                        key={pack.id}
+                                                        onClick={() => setSelectedPackId(pack.id)}
+                                                        className="group bg-slate-900/80 border border-slate-800 hover:border-sky-500/50 rounded-2xl p-6 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:shadow-sky-900/20 hover:-translate-y-1 relative overflow-hidden backdrop-blur-sm"
+                                                    >
+                                                        {/* Decorative Gradient Blob */}
+                                                        <div className="absolute -right-10 -top-10 w-32 h-32 bg-sky-500/10 rounded-full blur-2xl group-hover:bg-sky-500/20 transition-all"></div>
+
+                                                        <div className="relative z-10">
+                                                            <div className="flex justify-between items-start mb-4">
+                                                                <span className="text-[10px] font-mono font-bold text-sky-400 bg-sky-950/50 px-2 py-1 rounded border border-sky-900/50">v{pack.version}</span>
+                                                                <span className="text-xs text-slate-500 bg-slate-950/50 px-2 py-1 rounded">{pack.author}</span>
+                                                            </div>
+                                                            <h3 className="text-xl font-bold text-white mb-2 group-hover:text-sky-400 transition-colors">{pack.name}</h3>
+                                                            <p className="text-sm text-slate-400 line-clamp-2 h-10 mb-6 group-hover:text-slate-300 transition-colors">{pack.description || "No description provided."}</p>
+
+                                                            <div className="flex items-center justify-between pt-4 border-t border-slate-800/50">
+                                                                <div className="flex items-center gap-2 text-xs text-slate-500">
+                                                                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Ready</span>
+                                                                    <span>•</span>
+                                                                    <span>{pack.prompts?.length || 0} Steps</span>
+                                                                </div>
+                                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0">
+                                                                    <span className="text-xs font-bold text-sky-400">Manage →</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+
+                                                {/* Create New Pack (Placeholder) */}
+                                                <div className="border border-dashed border-slate-800 hover:border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center text-slate-600 hover:text-slate-400 transition-colors cursor-not-allowed bg-slate-900/20">
+                                                    <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
+                                                        <span className="text-2xl font-light">+</span>
+                                                    </div>
+                                                    <span className="font-medium text-sm">Create New Pack</span>
+                                                    <span className="text-[10px] mt-1 opacity-50 text-center">Import JSON or<br />Create from Scratch</span>
+                                                </div>
                                             </div>
                                         </div>
                                     ) : (
-                                        // PACK DETAIL
-                                        <div className="animate-in slide-in-from-right-4 duration-300">
-                                            <button onClick={() => setSelectedPackId(null)} className="mb-6 text-sm text-slate-400 hover:text-white flex items-center gap-2">← Quay lại danh sách</button>
+                                        // DETAILS VIEW
+                                        <div className="animate-in slide-in-from-right-8 duration-300">
+                                            <button onClick={() => setSelectedPackId(null)} className="mb-8 text-sm text-slate-400 hover:text-white flex items-center gap-2 group transition-colors">
+                                                <span className="group-hover:-translate-x-1 transition-transform">←</span> Back to Gallery
+                                            </button>
 
                                             {(() => {
                                                 const pack = packs.find(p => p.id === selectedPackId);
                                                 if (!pack) return null;
                                                 return (
                                                     <>
-                                                        <div className="flex justify-between items-end mb-8 border-b border-slate-800 pb-6">
+                                                        <div className="flex flex-col md:flex-row justify-between items-end mb-10 border-b border-slate-800 pb-8 gap-6">
                                                             <div>
-                                                                <h1 className="text-3xl font-bold text-white mb-2">{pack.name}</h1>
-                                                                <p className="text-slate-400">{pack.description}</p>
+                                                                <div className="flex items-center gap-3 mb-2">
+                                                                    <h1 className="text-4xl font-bold text-white tracking-tight">{pack.name}</h1>
+                                                                    <span className="bg-sky-900/30 text-sky-400 border border-sky-800/50 text-xs px-2 py-1 rounded">Official Pack</span>
+                                                                </div>
+                                                                <p className="text-slate-400 text-lg max-w-2xl">{pack.description}</p>
                                                             </div>
-                                                            <div className="flex gap-3">
-                                                                <button onClick={() => handleActivatePack(pack.id)} className="px-6 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded shadow-lg shadow-sky-900/20">
-                                                                    Áp dụng (Active)
-                                                                </button>
-                                                            </div>
+                                                            <button onClick={() => handleActivatePack(pack.id)} className="px-6 py-3 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-900/30 transition-all hover:scale-105 active:scale-95 whitespace-nowrap hidden md:block">
+                                                                Deploy this Workforce
+                                                            </button>
                                                         </div>
 
-                                                        {/* 6 Steps Grid */}
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                                                        {/* STEPS GRID */}
+                                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                                             {[1, 2, 3, 4, 5, 6].map(stepId => {
-                                                                // Find prompt from prompts library (merged) that corresponds to this pack step
-                                                                // Logic: 
-                                                                // 1. From manifest, find the 'id' of the prompt for this step.
-                                                                // 2. Find prompt in 'state.prompts' matching that 'id'.
                                                                 const manifestItem = pack.prompts?.find(p => p.stepId === stepId);
                                                                 const promptData = manifestItem ? prompts.find(p => p.id === manifestItem.id) : null;
 
                                                                 return (
-                                                                    <div key={stepId} className={`relative p-5 rounded-xl border ${promptData ? 'border-slate-700 bg-slate-900' : 'border-slate-800 bg-slate-900/50 opacity-60'}`}>
-                                                                        <div className="absolute top-4 right-4 text-6xl font-black text-slate-800 select-none z-0">{stepId}</div>
-                                                                        <div className="relative z-10">
-                                                                            <h4 className="text-xs uppercase font-bold text-slate-500 mb-2">Bước {stepId}</h4>
-                                                                            {promptData ? (
-                                                                                <>
-                                                                                    <h3 className="font-bold text-white mb-1 line-clamp-1" title={promptData.name}>{promptData.name}</h3>
-                                                                                    <p className="text-xs text-slate-500 font-mono mb-4">{promptData.id}</p>
-                                                                                    <button onClick={() => handleEditPrompt(promptData)} className="w-full py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-sm text-sky-400 font-medium transition-colors flex items-center justify-center gap-2">
-                                                                                        <EditIcon className="w-4 h-4" /> Chỉnh sửa
+                                                                    <div key={stepId} className="relative group">
+                                                                        {/* Step Number Background */}
+                                                                        <div className="absolute -top-4 -right-2 text-8xl font-black text-slate-800/20 select-none z-0 group-hover:text-slate-800/40 transition-colors pointer-events-none">{stepId}</div>
+
+                                                                        <div className={`relative z-10 h-full p-6 rounded-2xl border transition-all duration-300 flex flex-col
+                                                                            ${promptData
+                                                                                ? 'bg-slate-900/50 border-slate-700/50 hover:bg-slate-800 hover:border-sky-500/30 hover:shadow-xl'
+                                                                                : 'bg-slate-900/20 border-slate-800/50 border-dashed hover:bg-slate-900/40'}`}>
+
+                                                                            <div className="mb-4">
+                                                                                <div className="text-[10px] font-bold text-sky-500/80 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                                                                    {stepId === 1 ? 'Input & Research' : stepId === 2 ? 'Structure' : stepId === 3 ? 'Screenplay' : stepId === 4 ? 'Visual Generation' : stepId === 5 ? 'Audio/TTS' : 'SEO & Meta'}
+                                                                                </div>
+                                                                                {promptData ? (
+                                                                                    <>
+                                                                                        <h3 className="font-bold text-white text-lg mb-1 truncate" title={promptData.name}>{promptData.name}</h3>
+                                                                                        <code className="text-[10px] text-slate-500 bg-slate-950 px-2 py-1 rounded block w-fit mb-4">{promptData.id}</code>
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <div className="text-slate-500 italic text-sm mb-4">No prompt assigned for this step.</div>
+                                                                                )}
+                                                                            </div>
+
+                                                                            {promptData && (
+                                                                                <div className="mt-auto">
+                                                                                    <button
+                                                                                        onClick={() => handleEditPrompt(promptData)}
+                                                                                        className="w-full py-2.5 bg-slate-800 hover:bg-sky-600/20 hover:text-sky-400 border border-slate-700 hover:border-sky-500/30 rounded-lg text-sm text-slate-300 font-medium transition-all flex items-center justify-center gap-2"
+                                                                                    >
+                                                                                        <EditIcon className="w-4 h-4" /> Edit Content
                                                                                     </button>
-                                                                                </>
-                                                                            ) : (
-                                                                                <div className="h-24 flex items-center justify-center text-slate-600 text-sm">
-                                                                                    Không có prompt cho bước này
                                                                                 </div>
                                                                             )}
                                                                         </div>
@@ -258,26 +385,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                 </>
                             )}
 
-                            {/* TAB: FLAT PROMPTS */}
+                            {/* --- TAB: PROMPTS --- */}
                             {activeTab === 'prompts' && (
-                                <div>
-                                    <div className="flex justify-between mb-6">
-                                        <h2 className="text-xl font-bold text-white">Tất cả Prompts</h2>
-                                        <button onClick={handleAddCustom} className="px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded text-sm font-bold">+ Thêm Prompt Mới</button>
+                                <div className="animate-in fade-in duration-500">
+                                    <div className="flex justify-between items-center mb-8">
+                                        <h2 className="text-2xl font-bold text-white">Result Registry (Flat View)</h2>
+                                        <button onClick={handleAddCustom} className="px-5 py-2.5 bg-green-700 hover:bg-green-600 text-white rounded-lg text-sm font-bold shadow-lg shadow-green-900/20 transition-all hover:scale-105 active:scale-95 flex items-center gap-2">
+                                            <span>+</span> Create Custom Prompt
+                                        </button>
                                     </div>
-                                    <div className="space-y-4">
+
+                                    <div className="space-y-3">
                                         {prompts.map(p => (
-                                            <div key={p.id} className="flex items-center justify-between p-4 bg-slate-900 border border-slate-800 rounded-lg hover:border-slate-600">
-                                                <div>
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-[10px] font-bold border border-slate-700">STEP {p.stepId}</span>
-                                                        <span className="font-bold text-slate-200">{p.name}</span>
+                                            <div key={p.id} className="group flex items-center justify-between p-4 bg-slate-900/50 border border-slate-800 rounded-xl hover:bg-slate-800 hover:border-slate-700 transition-all">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500 border border-slate-700">
+                                                        {p.stepId}
                                                     </div>
-                                                    <span className="text-xs text-slate-600 font-mono mt-1 block">{p.id}</span>
+                                                    <div>
+                                                        <div className="font-bold text-slate-200 group-hover:text-white transition-colors">{p.name}</div>
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <code className="text-[10px] text-slate-500 bg-slate-950 px-1.5 py-0.5 rounded">{p.id}</code>
+                                                            {p.packId && <span className="text-[10px] text-sky-600 bg-sky-950/30 px-1.5 py-0.5 rounded border border-sky-900/30">{p.packId}</span>}
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => handleEditPrompt(p)} className="p-2 text-slate-400 hover:text-sky-400"><EditIcon className="w-4 h-4" /></button>
-                                                    <button onClick={() => { if (confirm('Xóa?')) { /* Not implemented prop yet */ } }} className="p-2 text-slate-400 hover:text-red-400"><TrashIcon className="w-4 h-4" /></button>
+                                                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity translate-x-4 group-hover:translate-x-0 duration-200">
+                                                    <button onClick={() => handleEditPrompt(p)} className="p-2 bg-slate-800 hover:bg-sky-600 text-slate-400 hover:text-white rounded-lg transition-colors shadow-sm"><EditIcon className="w-4 h-4" /></button>
+                                                    <button onClick={() => { if (confirm('Delete?')) { /* TODO */ } }} className="p-2 bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white rounded-lg transition-colors shadow-sm"><TrashIcon className="w-4 h-4" /></button>
                                                 </div>
                                             </div>
                                         ))}
