@@ -15,6 +15,7 @@ import {
   extractVoiceOver,
   createMetadata
 } from '@/services/geminiService';
+import { apiKeyManager, ApiKeyInfo, KeyManagerState } from '@/lib/apiKeyManager';
 
 import StepProgressBar from '@/components/StepProgressBar';
 import WandIcon from '@/components/icons/WandIcon';
@@ -97,6 +98,17 @@ export default function Home() {
     currentStep: number;
     message: string;
   } | null>(null);
+
+  // ========== PHASE 9: API KEY POOL STATE ==========
+  const [keyPoolInput, setKeyPoolInput] = useState<string>('');
+  const [keyPoolState, setKeyPoolState] = useState<KeyManagerState>({ keys: [], currentIndex: 0, isChecking: false });
+  const [maxConcurrent, setMaxConcurrent] = useState<number>(3); // Parallel processing
+
+  // Subscribe to API Key Manager updates
+  useEffect(() => {
+    const unsubscribe = apiKeyManager.subscribe(setKeyPoolState);
+    return unsubscribe;
+  }, []);
 
   const [editableInput, setEditableInput] = useState('');
   const [updateSuccessMessage, setUpdateSuccessMessage] = useState('');
@@ -274,6 +286,49 @@ export default function Home() {
       }
     }
     setIsProcessingBatch(false); setProgress(null);
+  };
+
+  // ========== PHASE 9: API KEY POOL HANDLERS ==========
+  const handleAddKeysToPool = () => {
+    if (!keyPoolInput.trim()) {
+      alert('⚠️ Vui lòng nhập API Keys (mỗi key một dòng)');
+      return;
+    }
+    const count = apiKeyManager.addKeysFromInput(keyPoolInput);
+    setKeyPoolInput('');
+    alert(`✅ Đã thêm ${count} API Key(s) vào pool`);
+  };
+
+  const handleCheckAllKeys = async () => {
+    if (keyPoolState.keys.length === 0) {
+      alert('⚠️ Chưa có API Key nào trong pool');
+      return;
+    }
+    const results = await apiKeyManager.checkAllKeys();
+    alert(`✅ Kiểm tra hoàn tất!\n🟢 Active: ${results.active}\n🟡 Rate Limited: ${results.rateLimited}\n🔴 Dead: ${results.dead}`);
+  };
+
+  const handleRemoveKey = (key: string) => {
+    if (confirm('Xác nhận xóa API Key này?')) {
+      apiKeyManager.removeKey(key);
+    }
+  };
+
+  const handleClearAllKeys = () => {
+    if (confirm('⚠️ Xóa TẤT CẢ API Keys khỏi pool?')) {
+      apiKeyManager.clearKeys();
+    }
+  };
+
+  // Get status badge color
+  const getKeyStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return 'bg-green-600';
+      case 'rate_limited': return 'bg-yellow-600';
+      case 'dead': return 'bg-red-600';
+      case 'checking': return 'bg-blue-600 animate-pulse';
+      default: return 'bg-gray-600';
+    }
   };
 
   // ========== ISOLATED BATCH MODE FUNCTIONS (New - Completely Separate) ==========
@@ -654,6 +709,85 @@ export default function Home() {
                   />
                 </div>
 
+                {/* Max Concurrent Jobs */}
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase flex justify-between mb-2">
+                    <span>Song Song</span>
+                    <span className="text-green-400">{maxConcurrent} jobs</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={maxConcurrent}
+                    onChange={e => setMaxConcurrent(Number(e.target.value))}
+                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+
+                <hr className="border-slate-700" />
+
+                {/* API Key Pool Section */}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-sm font-bold text-amber-400">🔑 API Key Pool</h4>
+                    <span className="text-xs text-slate-400">
+                      {keyPoolState.keys.filter(k => k.status === 'active').length} / {keyPoolState.keys.length} active
+                    </span>
+                  </div>
+
+                  <textarea
+                    value={keyPoolInput}
+                    onChange={e => setKeyPoolInput(e.target.value)}
+                    rows={3}
+                    placeholder="Nhập API Keys (mỗi key 1 dòng)..."
+                    className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-xs text-white font-mono"
+                  />
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleAddKeysToPool}
+                      className="flex-1 py-2 bg-green-600 hover:bg-green-700 rounded text-xs font-bold text-white"
+                    >
+                      ➕ Thêm Key
+                    </button>
+                    <button
+                      onClick={handleCheckAllKeys}
+                      disabled={keyPoolState.isChecking}
+                      className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 rounded text-xs font-bold text-white disabled:opacity-50"
+                    >
+                      {keyPoolState.isChecking ? '🔄...' : '🔍 Check'}
+                    </button>
+                    <button
+                      onClick={handleClearAllKeys}
+                      className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded text-xs font-bold text-white"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+
+                  {/* Key Status List */}
+                  {keyPoolState.keys.length > 0 && (
+                    <div className="max-h-32 overflow-y-auto space-y-1 custom-scrollbar">
+                      {keyPoolState.keys.map((keyInfo, idx) => (
+                        <div key={idx} className="flex items-center gap-2 bg-slate-900 p-2 rounded text-xs">
+                          <span className={`w-2 h-2 rounded-full ${getKeyStatusColor(keyInfo.status)}`}></span>
+                          <span className="flex-1 font-mono text-slate-300 truncate">
+                            {keyInfo.key.substring(0, 8)}...{keyInfo.key.substring(keyInfo.key.length - 4)}
+                          </span>
+                          <span className="text-slate-500">{keyInfo.usageCount}×</span>
+                          <button
+                            onClick={() => handleRemoveKey(keyInfo.key)}
+                            className="text-red-400 hover:text-red-300"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <hr className="border-slate-700" />
 
                 {/* Input Textarea */}
@@ -723,8 +857,8 @@ export default function Home() {
                   {/* Processed Jobs */}
                   {processedJobs.map((job, idx) => (
                     <div key={job.id} className={`p-3 rounded border ${job.status === 'completed'
-                        ? 'bg-green-900/20 border-green-600'
-                        : 'bg-red-900/20 border-red-600'
+                      ? 'bg-green-900/20 border-green-600'
+                      : 'bg-red-900/20 border-red-600'
                       }`}>
                       <div className="flex justify-between items-center">
                         <div className="flex-1">
