@@ -86,6 +86,18 @@ export default function Home() {
   const [delayBetweenSteps, setDelayBetweenSteps] = useState(2000); // ms
   const [delayBetweenJobs, setDelayBetweenJobs] = useState(5000); // ms
 
+  // ========== ISOLATED BATCH MODE STATE (New - Completely Separate) ==========
+  const [batchSceneCount, setBatchSceneCount] = useState<number>(45);
+  const [batchWordMin, setBatchWordMin] = useState<number>(18);
+  const [batchWordMax, setBatchWordMax] = useState<number>(22);
+  const [batchDelaySeconds, setBatchDelaySeconds] = useState<number>(5);
+  const [batchProgress, setBatchProgress] = useState<{
+    jobIndex: number;
+    totalJobs: number;
+    currentStep: number;
+    message: string;
+  } | null>(null);
+
   const [editableInput, setEditableInput] = useState('');
   const [updateSuccessMessage, setUpdateSuccessMessage] = useState('');
 
@@ -264,6 +276,137 @@ export default function Home() {
     setIsProcessingBatch(false); setProgress(null);
   };
 
+  // ========== ISOLATED BATCH MODE FUNCTIONS (New - Completely Separate) ==========
+
+  // 1. Parse Input: Tách các kịch bản bằng dòng trống
+  const handleBatchParseInput = () => {
+    if (!batchInputRaw.trim()) {
+      alert('⚠️ Vui lòng nhập nội dung kịch bản');
+      return;
+    }
+
+    const scripts = batchInputRaw
+      .split(/\n\s*\n/)
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length > 0);
+
+    if (scripts.length === 0) {
+      alert('⚠️ Không tìm thấy kịch bản hợp lệ');
+      return;
+    }
+
+    const newJobs: BatchJob[] = scripts.map((script: string, idx: number) => ({
+      id: `JOB_${Date.now()}_${idx}`,
+      input: script,
+      status: 'pending',
+      outputs: {},
+      createdAt: Date.now()
+    }));
+
+    setBatchQueue(prev => [...prev, ...newJobs]);
+    setBatchInputRaw(''); // Fixed: Use correct state setter
+    alert(`✅ Đã thêm ${newJobs.length} kịch bản vào hàng chờ`);
+  };
+
+  // 2. Process Single Job: Chạy Steps 2-6 cho 1 job
+  const processBatchJob = async (job: BatchJob, jobIndex: number, totalJobs: number): Promise<StepOutputs> => {
+    const outputs: StepOutputs = {};
+
+    try {
+      // Step 2: Tạo Outline
+      setBatchProgress({ jobIndex, totalJobs, currentStep: 2, message: `Job ${jobIndex}/${totalJobs} - Tạo Outline...` });
+      const totalOutlineBatches = Math.ceil(batchSceneCount / 5);
+      let fullOutline = "";
+      for (let b = 0; b < totalOutlineBatches; b++) {
+        const chunk = await createOutlineBatch(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchWordMin, batchWordMax);
+        if (chunk === "END_OF_OUTLINE") break;
+        fullOutline += "\n" + chunk;
+      }
+      outputs[2] = fullOutline.trim();
+
+      // Step 3: Viết Script
+      setBatchProgress({ jobIndex, totalJobs, currentStep: 3, message: `Job ${jobIndex}/${totalJobs} - Viết Script...` });
+      const totalScriptBatches = Math.ceil(batchSceneCount / 5);
+      let fullScript = "";
+      for (let b = 0; b < totalScriptBatches; b++) {
+        const chunk = await createScriptBatch(apiKey, outputs[2], getPromptContentById(selectedPromptIds[3], promptsLibrary), fullScript, b, batchSceneCount);
+        if (chunk.includes("END_OF_SCRIPT")) { fullScript += "\n" + chunk.replace("END_OF_SCRIPT", "").trim(); break; }
+        fullScript += "\n" + chunk;
+      }
+      outputs[3] = fullScript.trim();
+
+      // Step 4: Trích xuất Prompts
+      setBatchProgress({ jobIndex, totalJobs, currentStep: 4, message: `Job ${jobIndex}/${totalJobs} - Trích xuất Prompts...` });
+      const chunks = splitScriptIntoChunks(outputs[3]);
+      const jsons = [];
+      for (const chunk of chunks) {
+        jsons.push(await generatePromptsBatch(apiKey, chunk, getPromptContentById(selectedPromptIds[4], promptsLibrary)));
+      }
+      outputs[4] = mergePromptJsons(jsons);
+
+      // Step 5: Tách Voice Over
+      setBatchProgress({ jobIndex, totalJobs, currentStep: 5, message: `Job ${jobIndex}/${totalJobs} - Tách Voice Over...` });
+      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), batchWordMin, batchWordMax);
+
+      // Step 6: Tạo Metadata
+      setBatchProgress({ jobIndex, totalJobs, currentStep: 6, message: `Job ${jobIndex}/${totalJobs} - Tạo Metadata...` });
+      outputs[6] = await createMetadata(apiKey, outputs[3], getPromptContentById(selectedPromptIds[6], promptsLibrary));
+
+      return outputs;
+    } catch (error: any) {
+      throw new Error(`Lỗi khi xử lý Job ${jobIndex}: ${error.message}`);
+    }
+  };
+
+  // 3. Run Batch Queue: Chạy toàn bộ queue
+  const handleRunBatchQueue = async () => {
+    if (!apiKey) { alert('⚠️ Vui lòng nhập API Key'); return; }
+    if (batchQueue.length === 0) { alert('⚠️ Hàng chờ trống. Hãy thêm kịch bản trước.'); return; }
+
+    setIsProcessingBatch(true);
+    const queueCopy = [...batchQueue];
+
+    for (let i = 0; i < queueCopy.length; i++) {
+      const job = queueCopy[i];
+      setBatchQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'processing' } : j));
+
+      try {
+        const outputs = await processBatchJob(job, i + 1, queueCopy.length);
+        setProcessedJobs(prev => [...prev, { ...job, status: 'completed', outputs }]);
+        setBatchQueue(prev => prev.filter(j => j.id !== job.id));
+      } catch (error: any) {
+        setProcessedJobs(prev => [...prev, { ...job, status: 'failed', outputs: {}, error: error.message }]);
+        setBatchQueue(prev => prev.filter(j => j.id !== job.id));
+      }
+
+      if (i < queueCopy.length - 1) {
+        setBatchProgress({ jobIndex: i + 1, totalJobs: queueCopy.length, currentStep: 0, message: `Chờ ${batchDelaySeconds}s trước khi chạy job tiếp...` });
+        await new Promise(resolve => setTimeout(resolve, batchDelaySeconds * 1000));
+      }
+    }
+
+    setIsProcessingBatch(false);
+    setBatchProgress(null);
+    alert('✅ Hoàn thành toàn bộ Batch Queue!');
+  };
+
+  // 4. Download Job ZIP: Tải kết quả 1 job
+  const handleDownloadBatchJob = async (job: BatchJob) => {
+    const zip = new JSZip();
+    const folderName = `script_${job.id}`;
+    const folder = zip.folder(folderName);
+
+    if (job.outputs[2]) folder?.file('step2_outline.txt', job.outputs[2]);
+    if (job.outputs[3]) folder?.file('step3_script.txt', job.outputs[3]);
+    if (job.outputs[4]) folder?.file('step4_prompts.json', job.outputs[4]);
+    if (job.outputs[5]) folder?.file('step5_voiceover.txt', job.outputs[5]);
+    if (job.outputs[6]) folder?.file('step6_metadata.txt', job.outputs[6]);
+    folder?.file('input_original.txt', job.input);
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    saveAs(content, `${folderName}.zip`);
+  };
+
   // --- SINGLE MODE HANDLERS ---
   const handleGenerate = async () => {
     if (!apiKey) { setError("Thiếu API Key."); return; }
@@ -278,7 +421,8 @@ export default function Home() {
         const input = getInputForStep(currentStep);
         if (!input) throw new Error("Thiếu input.");
         if (currentStep === 2) {
-          const totalBatches = Math.ceil(sceneCount / 10);
+          // FIX: Match service batch size (5 scenes per batch)
+          const totalBatches = Math.ceil(sceneCount / 5);
           let fullOutline = "";
           for (let b = 0; b < totalBatches; b++) {
             setProgress({ current: b + 1, total: totalBatches, message: `Creating Outline Batch ${b + 1}/${totalBatches} (Validate Word Count)...` });
