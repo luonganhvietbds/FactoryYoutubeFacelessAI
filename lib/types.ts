@@ -31,6 +31,9 @@ export interface PromptPackManifest {
         id: string;
         name: string;
     }[];
+    // Validation fields (Runtime)
+    missingSteps?: number[];
+    isValid?: boolean;
 }
 
 export interface UserProfile {

@@ -36,6 +36,12 @@ export async function GET() {
                 const manifestContent = fs.readFileSync(manifestPath, 'utf8');
                 const manifest: PromptPackManifest = JSON.parse(manifestContent);
 
+                // --- VALIDATION: Check for 6 Steps Completeness ---
+                const requiredSteps = [1, 2, 3, 4, 5, 6];
+                const foundSteps = manifest.prompts ? manifest.prompts.map(p => p.stepId) : [];
+                manifest.missingSteps = requiredSteps.filter(s => !foundSteps.includes(s));
+                manifest.isValid = manifest.missingSteps.length === 0;
+
                 allPacks.push(manifest);
 
                 // Process prompts in manifest

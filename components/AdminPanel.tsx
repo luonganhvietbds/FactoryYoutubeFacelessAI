@@ -21,7 +21,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
     // --- STATE ---
     const [packs, setPacks] = useState<PromptPackManifest[]>([]);
     const [isLoadingPacks, setIsLoadingPacks] = useState(true);
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'packs' | 'prompts'>('packs');
+    const [activeTab, setActiveTab] = useState<'packs' | 'prompts'>('packs');
     const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
 
     // Edit State
@@ -48,6 +48,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
 
     // --- ACTIONS ---
     const handleActivatePack = (packId: string) => {
+        const pack = packs.find(p => p.id === packId);
+        if (pack && pack.isValid === false) {
+            alert(`CẢNH BÁO: Bộ Prompt này thiếu các bước quan trọng (${pack.missingSteps?.join(', ')}). Vui lòng bổ sung đầy đủ 6 bước trước khi kích hoạt.`);
+            return;
+        }
         alert("Vui lòng sử dụng 'Workforce Selector' ở trang chủ để kích hoạt Pack này cho toàn bộ hệ thống.");
     };
 
@@ -120,7 +125,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                     </div>
                     <div className="flex items-center gap-4">
                         <div className="px-3 py-1 bg-slate-800 rounded-full border border-slate-700 text-xs text-slate-400 font-mono">
-                            v2.1.0-RC
+                            v2.2.0-IntegrityCheck
                         </div>
                         <button onClick={onClose} className="group p-2 hover:bg-red-500/10 rounded-full transition-colors" title="Thoát">
                             <LogOutIcon className="w-5 h-5 text-slate-500 group-hover:text-red-400" />
@@ -270,27 +275,47 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                                     <div
                                                         key={pack.id}
                                                         onClick={() => setSelectedPackId(pack.id)}
-                                                        className="group bg-slate-900/80 border border-slate-800 hover:border-sky-500/50 rounded-2xl p-6 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:shadow-sky-900/20 hover:-translate-y-1 relative overflow-hidden backdrop-blur-sm"
+                                                        className={`group bg-slate-900/80 border hover:border-sky-500/50 rounded-2xl p-6 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:shadow-sky-900/20 hover:-translate-y-1 relative overflow-hidden backdrop-blur-sm
+                                                        ${pack.isValid === false ? 'border-red-900/50 hover:border-red-500/50' : 'border-slate-800'}`}
                                                     >
                                                         {/* Decorative Gradient Blob */}
-                                                        <div className="absolute -right-10 -top-10 w-32 h-32 bg-sky-500/10 rounded-full blur-2xl group-hover:bg-sky-500/20 transition-all"></div>
+                                                        {pack.isValid !== false ? (
+                                                            <div className="absolute -right-10 -top-10 w-32 h-32 bg-sky-500/10 rounded-full blur-2xl group-hover:bg-sky-500/20 transition-all"></div>
+                                                        ) : (
+                                                            <div className="absolute -right-10 -top-10 w-32 h-32 bg-red-500/10 rounded-full blur-2xl group-hover:bg-red-500/20 transition-all"></div>
+                                                        )}
 
                                                         <div className="relative z-10">
                                                             <div className="flex justify-between items-start mb-4">
                                                                 <span className="text-[10px] font-mono font-bold text-sky-400 bg-sky-950/50 px-2 py-1 rounded border border-sky-900/50">v{pack.version}</span>
-                                                                <span className="text-xs text-slate-500 bg-slate-950/50 px-2 py-1 rounded">{pack.author}</span>
+                                                                {pack.isValid === false && (
+                                                                    <span className="text-[10px] font-bold text-white bg-red-600 px-2 py-1 rounded flex items-center gap-1 animate-pulse">
+                                                                        ⚠️ INCOMPLETE
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                             <h3 className="text-xl font-bold text-white mb-2 group-hover:text-sky-400 transition-colors">{pack.name}</h3>
-                                                            <p className="text-sm text-slate-400 line-clamp-2 h-10 mb-6 group-hover:text-slate-300 transition-colors">{pack.description || "No description provided."}</p>
+
+                                                            {pack.isValid === false ? (
+                                                                <div className="mb-4 bg-red-900/20 border border-red-900/50 rounded p-2 text-xs text-red-300">
+                                                                    Missing Steps: <b>{pack.missingSteps?.join(', ')}</b>. <br />Pack cannot be deployed safely.
+                                                                </div>
+                                                            ) : (
+                                                                <p className="text-sm text-slate-400 line-clamp-2 h-10 mb-6 group-hover:text-slate-300 transition-colors">{pack.description || "No description provided."}</p>
+                                                            )}
 
                                                             <div className="flex items-center justify-between pt-4 border-t border-slate-800/50">
                                                                 <div className="flex items-center gap-2 text-xs text-slate-500">
-                                                                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Ready</span>
+                                                                    {pack.isValid !== false ? (
+                                                                        <span className="flex items-center gap-1 text-green-500"><span className="w-2 h-2 rounded-full bg-green-500"></span> Verified</span>
+                                                                    ) : (
+                                                                        <span className="flex items-center gap-1 text-red-500"><span className="w-2 h-2 rounded-full bg-red-500"></span> Error</span>
+                                                                    )}
                                                                     <span>•</span>
-                                                                    <span>{pack.prompts?.length || 0} Steps</span>
+                                                                    <span>{pack.prompts?.length || 0}/6</span>
                                                                 </div>
                                                                 <div className="opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0">
-                                                                    <span className="text-xs font-bold text-sky-400">Manage →</span>
+                                                                    <span className="text-xs font-bold text-sky-400">View Details →</span>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -323,12 +348,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                                             <div>
                                                                 <div className="flex items-center gap-3 mb-2">
                                                                     <h1 className="text-4xl font-bold text-white tracking-tight">{pack.name}</h1>
-                                                                    <span className="bg-sky-900/30 text-sky-400 border border-sky-800/50 text-xs px-2 py-1 rounded">Official Pack</span>
+                                                                    {pack.isValid === false && <span className="text-red-500 bg-red-950/30 border border-red-900/50 px-2 py-1 rounded text-sm font-bold animate-pulse">⚠️ MISSING DATA</span>}
                                                                 </div>
                                                                 <p className="text-slate-400 text-lg max-w-2xl">{pack.description}</p>
                                                             </div>
-                                                            <button onClick={() => handleActivatePack(pack.id)} className="px-6 py-3 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-900/30 transition-all hover:scale-105 active:scale-95 whitespace-nowrap hidden md:block">
-                                                                Deploy this Workforce
+                                                            <button
+                                                                onClick={() => handleActivatePack(pack.id)}
+                                                                disabled={pack.isValid === false}
+                                                                className={`px-6 py-3 rounded-xl font-bold shadow-lg transition-all whitespace-nowrap hidden md:block
+                                                                    ${pack.isValid === false
+                                                                        ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                                                                        : 'bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white hover:scale-105 active:scale-95 shadow-indigo-900/30'}`}
+                                                            >
+                                                                {pack.isValid === false ? 'Cannot Deploy (Incomplete)' : 'Deploy this Workforce'}
                                                             </button>
                                                         </div>
 
@@ -337,11 +369,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                                             {[1, 2, 3, 4, 5, 6].map(stepId => {
                                                                 const manifestItem = pack.prompts?.find(p => p.stepId === stepId);
                                                                 const promptData = manifestItem ? prompts.find(p => p.id === manifestItem.id) : null;
+                                                                const isMissing = !promptData;
 
                                                                 return (
                                                                     <div key={stepId} className="relative group">
                                                                         {/* Step Number Background */}
-                                                                        <div className="absolute -top-4 -right-2 text-8xl font-black text-slate-800/20 select-none z-0 group-hover:text-slate-800/40 transition-colors pointer-events-none">{stepId}</div>
+                                                                        <div className={`absolute -top-4 -right-2 text-8xl font-black select-none z-0 transition-colors pointer-events-none ${isMissing && pack.isValid === false ? 'text-red-900/30' : 'text-slate-800/20 group-hover:text-slate-800/40'}`}>{stepId}</div>
 
                                                                         <div className={`relative z-10 h-full p-6 rounded-2xl border transition-all duration-300 flex flex-col
                                                                             ${promptData
@@ -358,7 +391,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                                                                         <code className="text-[10px] text-slate-500 bg-slate-950 px-2 py-1 rounded block w-fit mb-4">{promptData.id}</code>
                                                                                     </>
                                                                                 ) : (
-                                                                                    <div className="text-slate-500 italic text-sm mb-4">No prompt assigned for this step.</div>
+                                                                                    <div className="flex flex-col items-start gap-2">
+                                                                                        <span className="text-slate-500 italic text-sm">No prompt assigned.</span>
+                                                                                        {pack.isValid === false && <span className="text-red-400 text-xs font-bold bg-red-900/20 px-2 py-1 rounded border border-red-900/50">⚠️ REQUIRED</span>}
+                                                                                    </div>
                                                                                 )}
                                                                             </div>
 
