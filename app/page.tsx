@@ -2,12 +2,12 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { STEPS_CONFIG } from '@/lib/constants';
-import { StepOutputs, BatchJob, SystemPromptData, PromptPackManifest } from '@/lib/types'; // Import Pack Type
+import { StepOutputs, BatchJob, SystemPromptData, PromptPackManifest } from '@/lib/types';
 import { getPromptContentById } from '@/lib/prompt-utils';
 import { RegistryService } from '@/lib/prompt-registry/client-registry';
 import {
   getNewsAndEvents,
-  createOutline,
+  createOutlineBatch,
   createScriptBatch,
   splitScriptIntoChunks,
   generatePromptsBatch,
@@ -15,22 +15,20 @@ import {
   extractVoiceOver,
   createMetadata
 } from '@/services/geminiService';
+
 import StepProgressBar from '@/components/StepProgressBar';
 import WandIcon from '@/components/icons/WandIcon';
 import LoadingSpinnerIcon from '@/components/icons/LoadingSpinnerIcon';
 import CopyIcon from '@/components/icons/CopyIcon';
-import CheckIcon from '@/components/icons/CheckIcon';
 import RefreshCwIcon from '@/components/icons/RefreshCwIcon';
-import TrashIcon from '@/components/icons/TrashIcon';
 import PromptManager from '@/components/PromptManager';
 import ImageIcon from '@/components/icons/ImageIcon';
 import VideoIcon from '@/components/icons/VideoIcon';
 import AdminPanel from '@/components/AdminPanel';
 import SaveIcon from '@/components/icons/SaveIcon';
-import DownloadIcon from '@/components/icons/DownloadIcon'; // New Icon
-import JSZip from 'jszip'; // For Zip Download
-import { saveAs } from 'file-saver'; // For File Save
-
+import DownloadIcon from '@/components/icons/DownloadIcon';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 
 // --- HELPERS ---
 const INPUT_SOURCE_MAP: { [key: number]: number } = {
@@ -62,13 +60,14 @@ export default function Home() {
   // Settings & Inputs
   const [topicKeyword, setTopicKeyword] = useState<string>('');
   const [sceneCount, setSceneCount] = useState<number>(45);
-  const [wordCountLimit, setWordCountLimit] = useState<number>(50); // New State: Word Count per VO
+  const [wordCountMin, setWordCountMin] = useState<number>(18);
+  const [wordCountMax, setWordCountMax] = useState<number>(22);
   const [apiKey, setApiKey] = useState<string>('');
   const [saveApiKey, setSaveApiKey] = useState<boolean>(false);
 
   // Prompt Management
   const [promptsLibrary, setPromptsLibrary] = useState<SystemPromptData[]>([]);
-  const [availablePacks, setAvailablePacks] = useState<PromptPackManifest[]>([]); // New State
+  const [availablePacks, setAvailablePacks] = useState<PromptPackManifest[]>([]);
   const [selectedPromptIds, setSelectedPromptIds] = useState<{ [key: number]: string }>({});
 
   // Admin & UI
@@ -156,7 +155,7 @@ export default function Home() {
     const pack = availablePacks.find(p => p.id === packId);
     if (!pack) return;
 
-    const newSelection = { ...selectedPromptIds }; // Keep overrides if step missing in pack?
+    const newSelection = { ...selectedPromptIds };
 
     // Update steps based on Pack Manifest
     pack.prompts.forEach(pAsset => {
@@ -177,7 +176,7 @@ export default function Home() {
     else { alert("Sai mật khẩu"); }
   };
 
-  // --- BATCH PROCESSING LOGIC --- (Keep generic)
+  // --- BATCH PROCESSING LOGIC ---
   const handleAddToQueue = () => {
     if (!batchInputRaw.trim()) return;
     const inputs = batchInputRaw.split(/\n\s*\n/).map(line => line.trim()).filter(line => line.length > 0);
@@ -192,20 +191,23 @@ export default function Home() {
     setBatchInputRaw('');
   };
 
-  const handleClearQueue = () => {
-    if (isProcessingBatch) return;
-    if (window.confirm("Xóa toàn bộ hàng chờ?")) { setBatchQueue([]); setProcessedJobs([]); }
-  };
-
   const processSingleScript = async (input: string, jobIndex: number, totalJobs: number) => {
     if (!apiKey) throw new Error("Missing API Key");
     const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
     const outputs: StepOutputs = {};
     try {
       // Step 2
-      setProgress({ current: 1, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Đang tạo Outline...` });
-      outputs[2] = await createOutline(apiKey, input, getPromptContentById(selectedPromptIds[2], promptsLibrary), sceneCount);
+      const totalOutlineBatches = Math.ceil(sceneCount / 10);
+      let fullOutline = "";
+      for (let b = 0; b < totalOutlineBatches; b++) {
+        setProgress({ current: 2, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Outline Batch ${b + 1}/${totalOutlineBatches}...` });
+        const chunk = await createOutlineBatch(apiKey, input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, sceneCount);
+        if (chunk === "END_OF_OUTLINE") break;
+        fullOutline += "\n" + chunk;
+      }
+      outputs[2] = fullOutline.trim();
       await wait(delayBetweenSteps);
+
       // Step 3
       const totalBatches = Math.ceil(sceneCount / 5);
       let fullScript = "";
@@ -217,6 +219,7 @@ export default function Home() {
       }
       outputs[3] = fullScript.trim();
       await wait(delayBetweenSteps);
+
       // Step 4
       setProgress({ current: 4, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Trích xuất Prompts...` });
       const chunks = splitScriptIntoChunks(outputs[3]);
@@ -224,10 +227,12 @@ export default function Home() {
       for (const chunk of chunks) jsons.push(await generatePromptsBatch(apiKey, chunk, getPromptContentById(selectedPromptIds[4], promptsLibrary)));
       outputs[4] = mergePromptJsons(jsons);
       await wait(delayBetweenSteps);
+
       // Step 5
       setProgress({ current: 5, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Tách Voice...` });
-      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary));
+      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), wordCountMin, wordCountMax);
       await wait(delayBetweenSteps);
+
       // Step 6
       setProgress({ current: 6, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Metadata...` });
       outputs[6] = await createMetadata(apiKey, outputs[3], getPromptContentById(selectedPromptIds[6], promptsLibrary));
@@ -259,7 +264,7 @@ export default function Home() {
     setIsProcessingBatch(false); setProgress(null);
   };
 
-  // --- SINGLE MODE HANDLERS (Simplified) ---
+  // --- SINGLE MODE HANDLERS ---
   const handleGenerate = async () => {
     if (!apiKey) { setError("Thiếu API Key."); return; }
     setIsLoading(true); setError(null);
@@ -273,10 +278,16 @@ export default function Home() {
         const input = getInputForStep(currentStep);
         if (!input) throw new Error("Thiếu input.");
         if (currentStep === 2) {
-          setProgress({ current: 1, total: 1, message: 'Outline...' });
-          result = await createOutline(apiKey, input, promptContent, sceneCount);
+          const totalBatches = Math.ceil(sceneCount / 10);
+          let fullOutline = "";
+          for (let b = 0; b < totalBatches; b++) {
+            setProgress({ current: b + 1, total: totalBatches, message: `Creating Outline Batch ${b + 1}/${totalBatches}` });
+            const chunk = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount);
+            if (chunk === "END_OF_OUTLINE") break;
+            fullOutline += "\n" + chunk;
+          }
+          result = fullOutline.trim();
         } else if (currentStep === 3) {
-          // ... Scripting logic similar to batch ...
           const totalBatches = Math.ceil(sceneCount / 5);
           let fullScript = "";
           for (let i = 0; i < totalBatches; i++) {
@@ -294,7 +305,7 @@ export default function Home() {
             jsons.push(await generatePromptsBatch(apiKey, chunks[i], promptContent));
           }
           result = mergePromptJsons(jsons);
-        } else if (currentStep === 5) result = await extractVoiceOver(apiKey, input, promptContent);
+        } else if (currentStep === 5) result = await extractVoiceOver(apiKey, input, promptContent, wordCountMin, wordCountMax);
         else if (currentStep === 6) result = await createMetadata(apiKey, input, promptContent);
       }
       if (result) {
@@ -322,6 +333,7 @@ export default function Home() {
   }, [stepOutputs, topicKeyword]);
 
   useEffect(() => { setEditableInput(getInputForStep(viewingStep) ?? ''); setUpdateSuccessMessage(''); }, [viewingStep, stepOutputs, getInputForStep]);
+
   const handleUpdateInput = () => {
     const src = INPUT_SOURCE_MAP[viewingStep];
     if (src) { setStepOutputs(prev => ({ ...prev, [src]: editableInput })); setUpdateSuccessMessage('Cập nhật thành công!'); setTimeout(() => setUpdateSuccessMessage(''), 3000); }
@@ -348,8 +360,11 @@ export default function Home() {
     saveAs(content, "ai_script_factory_full_project.zip");
   };
 
-  const renderSplitPromptView = (output: string) => { /* Same as before, omitted for brevity, will restore in full overwrite */
-    // ... Re-implement full logic to avoid breaking ...
+  const handleCopyResult = () => {
+    if (stepOutputs[viewingStep]) { navigator.clipboard.writeText(stepOutputs[viewingStep]!); setCopiedResult(true); setTimeout(() => setCopiedResult(false), 2000); }
+  };
+
+  const renderSplitPromptView = (output: string) => {
     let imagePrompts: string[] = [], videoPrompts: string[] = [];
     let originalJson = {};
     let jsonString = output.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -373,22 +388,6 @@ export default function Home() {
         <PromptManager title="Video Prompts" prompts={videoPrompts} onUpdate={v => handleUpdate('video', v)} icon={<VideoIcon className="h-5 w-5 text-teal-400" />} />
       </div>
     );
-  };
-
-  const downloadText = (filename: string, content: string) => {
-    const element = document.createElement("a");
-    const file = new Blob([content], { type: 'text/plain' });
-    element.href = URL.createObjectURL(file);
-    element.download = filename;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-  };
-
-  const handleDownloadAllJobs = () => { /* ... */ };
-  const handleDownloadJob = (job: BatchJob) => { /* ... */ };
-  const handleCopyResult = () => {
-    if (stepOutputs[viewingStep]) { navigator.clipboard.writeText(stepOutputs[viewingStep]!); setCopiedResult(true); setTimeout(() => setCopiedResult(false), 2000); }
   };
 
   return (
@@ -442,7 +441,7 @@ export default function Home() {
         </div>
 
         {isBatchMode ? (
-          /* BATCH UI (Simplified for verify) */
+          /* BATCH UI */
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
               <h2 className="text-xl font-bold text-amber-400 mb-4">Inputs</h2>
@@ -475,7 +474,6 @@ export default function Home() {
                 </div>
                 <div className="flex-grow overflow-auto mb-4 custom-scrollbar">
                   {viewingStep === 1 && <input type="text" value={topicKeyword} onChange={e => setTopicKeyword(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-3" placeholder="Keyword..." />}
-                  {viewingStep === 1 && <input type="text" value={topicKeyword} onChange={e => setTopicKeyword(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-3" placeholder="Keyword..." />}
 
                   {viewingStep === 2 && (
                     <div className="space-y-4 mb-4">
@@ -491,10 +489,31 @@ export default function Home() {
                       <div>
                         <label className="text-xs font-bold text-slate-400 uppercase flex justify-between">
                           <span>Word Limit / VO (Giới hạn từ/câu)</span>
-                          <span className="text-indigo-400">{wordCountLimit} words</span>
                         </label>
-                        <input type="range" min="10" max="200" value={wordCountLimit} onChange={e => setWordCountLimit(Number(e.target.value))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer mt-2" />
-                        <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1"><span>Min: 10</span><span>Max: 200</span></div>
+                        <div className="flex gap-4 mt-2">
+                          <div className="flex-1">
+                            <label className="text-[10px] text-slate-500 mb-1 block">Min Words</label>
+                            <input
+                              type="number"
+                              min="5"
+                              max="100"
+                              value={wordCountMin}
+                              onChange={e => setWordCountMin(Number(e.target.value))}
+                              className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:border-sky-500 outline-none"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] text-slate-500 mb-1 block">Max Words</label>
+                            <input
+                              type="number"
+                              min="10"
+                              max="200"
+                              value={wordCountMax}
+                              onChange={e => setWordCountMax(Number(e.target.value))}
+                              className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:border-sky-500 outline-none"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -503,6 +522,7 @@ export default function Home() {
                     <textarea value={editableInput} onChange={e => setEditableInput(e.target.value)} rows={10} className="w-full bg-slate-900 border border-slate-700 rounded p-3 text-sm text-slate-300" />
                   )}
                   {getInputForStep(viewingStep) && viewingStep !== 1 && <button onClick={handleUpdateInput} className="text-xs bg-green-700 mt-2 px-2 py-1 rounded">Update Input</button>}
+                  {updateSuccessMessage && <span className="text-green-400 text-xs ml-2">{updateSuccessMessage}</span>}
                 </div>
                 <div className="mt-auto pt-4 border-t border-slate-700">
                   {viewingStep === currentStep && <button onClick={handleGenerate} disabled={isLoading} className="w-full py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded shadow-lg flex justify-center items-center gap-2">{isLoading ? <LoadingSpinnerIcon className="animate-spin h-5 w-5" /> : <WandIcon className="h-5 w-5" />} {activeStepConfig.buttonText}</button>}
