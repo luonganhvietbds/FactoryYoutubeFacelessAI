@@ -47,6 +47,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
     const [showCreatePackModal, setShowCreatePackModal] = useState(false);
     const [newPackForm, setNewPackForm] = useState({ id: '', name: '', description: '', author: '' });
 
+    // Edit Pack Meta State
+    const [isEditingPackMeta, setIsEditingPackMeta] = useState(false);
+    const [editPackForm, setEditPackForm] = useState({ name: '', description: '', author: '' });
+
     // Stats
     const totalEditablePrompts = prompts.length;
     const totalPacks = packs.length;
@@ -277,6 +281,31 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
         }
     };
 
+    // UPDATE PACK META -> FIRESTORE
+    const handleUpdatePackMeta = async () => {
+        if (!selectedPackId) return;
+
+        try {
+            const packRef = doc(db, "prompt_packs", selectedPackId);
+            await setDoc(packRef, {
+                name: editPackForm.name,
+                description: editPackForm.description,
+                author: editPackForm.author,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+
+            alert("✅ Cập nhật thông tin Pack thành công!");
+            setIsEditingPackMeta(false);
+
+            // Refresh
+            const data = await RegistryService.fetchFullRegistry();
+            setPacks(data.packs);
+        } catch (e: any) {
+            console.error(e);
+            alert("Lỗi cập nhật Pack: " + e.message);
+        }
+    };
+
     // CREATE NEW PACK -> FIRESTORE
     const handleCreatePack = async () => {
         if (!newPackForm.id || !newPackForm.name) {
@@ -490,6 +519,57 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                             </button>
                             <button
                                 onClick={() => setShowCreatePackModal(false)}
+                                className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700"
+                            >
+                                Hủy
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* === EDIT PACK META MODAL === */}
+            {isEditingPackMeta && (
+                <div className="absolute inset-0 z-[95] bg-black/70 backdrop-blur-sm flex items-center justify-center p-8">
+                    <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl animate-in zoom-in-95">
+                        <div className="p-6 border-b border-slate-800">
+                            <h2 className="text-xl font-bold text-white">✏️ Chỉnh sửa thông tin Pack</h2>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">Tên hiển thị</label>
+                                <input
+                                    value={editPackForm.name}
+                                    onChange={e => setEditPackForm({ ...editPackForm, name: e.target.value })}
+                                    className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-sky-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">Mô tả</label>
+                                <textarea
+                                    value={editPackForm.description}
+                                    onChange={e => setEditPackForm({ ...editPackForm, description: e.target.value })}
+                                    className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-sky-500 outline-none resize-none h-20"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">Tác giả</label>
+                                <input
+                                    value={editPackForm.author}
+                                    onChange={e => setEditPackForm({ ...editPackForm, author: e.target.value })}
+                                    className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-sky-500 outline-none"
+                                />
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-slate-800 flex gap-4">
+                            <button
+                                onClick={handleUpdatePackMeta}
+                                className="flex-1 py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl"
+                            >
+                                💾 Lưu thay đổi
+                            </button>
+                            <button
+                                onClick={() => setIsEditingPackMeta(false)}
                                 className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700"
                             >
                                 Hủy
@@ -731,8 +811,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                                     <>
                                                         <div className="flex flex-col md:flex-row justify-between items-end mb-10 border-b border-slate-800 pb-8 gap-6">
                                                             <div>
-                                                                <div className="flex items-center gap-3 mb-2">
+                                                                <div className="flex items-center gap-3 mb-2 group/title">
                                                                     <h1 className="text-4xl font-bold text-white tracking-tight">{pack.name}</h1>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setEditPackForm({
+                                                                                name: pack.name,
+                                                                                description: pack.description || '',
+                                                                                author: pack.author || ''
+                                                                            });
+                                                                            setIsEditingPackMeta(true);
+                                                                        }}
+                                                                        className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-colors opacity-0 group-hover/title:opacity-100" title="Chỉnh sửa tên"
+                                                                    >
+                                                                        <EditIcon className="w-5 h-5" />
+                                                                    </button>
                                                                     {(pack as any).isCloud && <span className="text-sky-300 bg-sky-900/30 px-3 py-1 rounded text-sm font-bold">☁️ Cloud Pack</span>}
                                                                 </div>
                                                                 <p className="text-slate-400 text-lg max-w-2xl">{pack.description}</p>
