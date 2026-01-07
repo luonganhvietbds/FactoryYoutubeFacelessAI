@@ -1,0 +1,20 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Prompt Packs:
+    // - Everyone can read (for now, to allow public viewing)
+    // - Only Admin can write (Currently unrestricted, will lock down later)
+    match /prompt_packs/{packId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // System Settings:
+    // - Needed for app initialization check
+    match /system_settings/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}

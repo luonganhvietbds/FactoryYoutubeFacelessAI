@@ -20,6 +20,8 @@ interface AdminPanelProps {
     onClose: () => void;
 }
 
+type SystemInitStatus = 'checking' | 'not_init' | 'initializing' | 'done' | 'error';
+
 const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClose }) => {
     // --- STATE ---
     const [packs, setPacks] = useState<PromptPackManifest[]>([]);
@@ -38,7 +40,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
 
     // Auto-Init State
     const [showInitModal, setShowInitModal] = useState(false);
-    const [initStatus, setInitStatus] = useState<'checking' | 'not_init' | 'initializing' | 'done' | 'error'>('checking');
+    const [initStatus, setInitStatus] = useState<string>('checking');
     const [initLog, setInitLog] = useState<string[]>([]);
 
     // Create Pack State
