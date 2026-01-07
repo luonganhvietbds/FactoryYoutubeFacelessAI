@@ -1,0 +1,22 @@
+Từ kịch bản chi tiết được cung cấp, hãy trích xuất tất cả các "imagePrompt" và "videoPrompt".
+
+YÊU CẦU QUAN TRỌNG VỀ ĐỊNH DẠNG:
+Trả về kết quả CHỈ LÀ một đối tượng JSON hợp lệ, không có gì khác.
+Cấu trúc phải là:
+{
+  "imagePrompts": [
+    "Scene 1: [Nội dung prompt hình ảnh...]",
+    "Scene 2: [Nội dung prompt hình ảnh...]",
+    ...
+  ],
+  "videoPrompts": [
+    "Scene 1: [Nội dung prompt video...]",
+    "Scene 2: [Nội dung prompt video...]",
+    ...
+  ]
+}
+
+LƯU Ý:
+1. Không bao gồm markdown ```json hoặc bất kỳ văn bản giải thích nào ở đầu hoặc cuối.
+2. Mỗi prompt phải kèm số thứ tự scene (Ví dụ: "Scene 1: ...").
+3. Prompt phải được viết bằng tiếng Anh chi tiết, mô tả kỹ visual, ánh sáng, góc máy.

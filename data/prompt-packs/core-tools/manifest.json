@@ -1,0 +1,33 @@
+{
+    "id": "core-tools",
+    "name": "Core Tools & Basics",
+    "version": "1.0.0",
+    "author": "System",
+    "description": "Basic prompts and essential extractors (JSON, Voice Over).",
+    "prompts": [
+        {
+            "stepId": 1,
+            "file": "step-1-general.txt",
+            "id": "S1_GENERAL_NEWS",
+            "name": "News: Tổng hợp tin tức phổ thông"
+        },
+        {
+            "stepId": 2,
+            "file": "step-2-basic.txt",
+            "id": "S2_OUTLINE_BASIC",
+            "name": "Outline: Cấu trúc Video cơ bản"
+        },
+        {
+            "stepId": 4,
+            "file": "step-4-extractor.txt",
+            "id": "S4_PROMPT_EXTRACTOR",
+            "name": "Prompt: Trích xuất JSON (Midjourney/Runway)"
+        },
+        {
+            "stepId": 5,
+            "file": "step-5-extractor.txt",
+            "id": "S5_VO_EXTRACTOR",
+            "name": "Audio: Tách Voice Over chuyên nghiệp"
+        }
+    ]
+}

@@ -1,0 +1,33 @@
+{
+    "id": "crime-doc-bd",
+    "name": "Crime Documentary (Bande Dessinée)",
+    "version": "1.0.0",
+    "author": "System",
+    "description": "Chuyên gia sản xuất phim tài liệu tội phạm phong cách truyện tranh Pháp (Bande Dessinée).",
+    "prompts": [
+        {
+            "stepId": 1,
+            "file": "step-1-crime.txt",
+            "id": "S1_CRIME_DOC_BD",
+            "name": "News: Tài liệu Tội phạm (Style Bande Dessinée)"
+        },
+        {
+            "stepId": 2,
+            "file": "step-2-outline.txt",
+            "id": "S2_OUTLINE_CRIME_BD",
+            "name": "Outline: Phân tích Tội phạm & Văn hóa ngược (BD Style)"
+        },
+        {
+            "stepId": 3,
+            "file": "step-3-script.txt",
+            "id": "S3_SCRIPT_CRIME_BD",
+            "name": "Script: Chi tiết Tội phạm Tâm lý (BD Visuals)"
+        },
+        {
+            "stepId": 6,
+            "file": "step-6-metadata.txt",
+            "id": "S6_METADATA_THUMB_BD",
+            "name": "Metadata: SEO & Thumbnail (BD Style)"
+        }
+    ]
+}
