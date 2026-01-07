@@ -413,42 +413,112 @@ export default function Home() {
     }
   };
 
-  // 3. Run Batch Queue: Chạy toàn bộ queue
+  // 3. Run Batch Queue: Chạy toàn bộ queue (Parallel với maxConcurrent)
   const handleRunBatchQueue = async () => {
-    if (!apiKey) { alert('⚠️ Vui lòng nhập API Key'); return; }
+    // Check API Key availability (single key or pool)
+    const hasKeyPool = keyPoolState.keys.length > 0 && keyPoolState.keys.some(k => k.status === 'active' || k.status === 'unknown');
+    if (!apiKey && !hasKeyPool) {
+      alert('⚠️ Vui lòng nhập API Key hoặc thêm API Keys vào pool');
+      return;
+    }
     if (batchQueue.length === 0) { alert('⚠️ Hàng chờ trống. Hãy thêm kịch bản trước.'); return; }
 
     setIsProcessingBatch(true);
     const queueCopy = [...batchQueue];
+    const totalJobs = queueCopy.length;
 
-    for (let i = 0; i < queueCopy.length; i++) {
-      const job = queueCopy[i];
-      setBatchQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'processing' } : j));
+    // Helper: Process a single job with retry
+    const processJobWithRetry = async (job: BatchJob, jobIndex: number) => {
+      const maxRetries = 3;
+      let lastError: Error | null = null;
 
-      try {
-        const outputs = await processBatchJob(job, i + 1, queueCopy.length);
-        setProcessedJobs(prev => [...prev, { ...job, status: 'completed', outputs }]);
-        setBatchQueue(prev => prev.filter(j => j.id !== job.id));
-      } catch (error: any) {
-        setProcessedJobs(prev => [...prev, { ...job, status: 'failed', outputs: {}, error: error.message }]);
-        setBatchQueue(prev => prev.filter(j => j.id !== job.id));
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          setBatchQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'processing' } : j));
+          const outputs = await processBatchJob(job, jobIndex, totalJobs);
+
+          // Success
+          setProcessedJobs(prev => [...prev, { ...job, status: 'completed', outputs }]);
+          setBatchQueue(prev => prev.filter(j => j.id !== job.id));
+          return; // Exit on success
+
+        } catch (error: any) {
+          lastError = error;
+          console.warn(`Job ${jobIndex} attempt ${attempt} failed: `, error.message);
+
+          // Exponential backoff before retry
+          if (attempt < maxRetries) {
+            const backoffMs = Math.pow(2, attempt) * 1000;
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+          }
+        }
       }
 
-      if (i < queueCopy.length - 1) {
-        setBatchProgress({ jobIndex: i + 1, totalJobs: queueCopy.length, currentStep: 0, message: `Chờ ${batchDelaySeconds}s trước khi chạy job tiếp...` });
+      // All retries failed
+      setProcessedJobs(prev => [...prev, {
+        ...job,
+        status: 'failed',
+        outputs: {},
+        error: `Failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'} `
+      }]);
+      setBatchQueue(prev => prev.filter(j => j.id !== job.id));
+    };
+
+    // Helper: Split array into chunks
+    const chunkArray = <T,>(arr: T[], size: number): T[][] => {
+      const result: T[][] = [];
+      for (let i = 0; i < arr.length; i += size) {
+        result.push(arr.slice(i, i + size));
+      }
+      return result;
+    };
+
+    // Process in parallel chunks
+    const chunks = chunkArray(queueCopy, maxConcurrent);
+    let processedCount = 0;
+
+    for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+      const chunk = chunks[chunkIdx];
+
+      // Update progress
+      setBatchProgress({
+        jobIndex: processedCount + 1,
+        totalJobs,
+        currentStep: 0,
+        message: `Đang chạy ${chunk.length} jobs song song(Chunk ${chunkIdx + 1}/${chunks.length})...`
+      });
+
+      // Run chunk in parallel
+      await Promise.all(
+        chunk.map((job, idx) => processJobWithRetry(job, processedCount + idx + 1))
+      );
+
+      processedCount += chunk.length;
+
+      // Delay between chunks (not after last chunk)
+      if (chunkIdx < chunks.length - 1 && batchDelaySeconds > 0) {
+        setBatchProgress({
+          jobIndex: processedCount,
+          totalJobs,
+          currentStep: 0,
+          message: `Chờ ${batchDelaySeconds}s trước khi chạy chunk tiếp...`
+        });
         await new Promise(resolve => setTimeout(resolve, batchDelaySeconds * 1000));
       }
     }
 
     setIsProcessingBatch(false);
     setBatchProgress(null);
-    alert('✅ Hoàn thành toàn bộ Batch Queue!');
+
+    const completedCount = processedJobs.filter(j => j.status === 'completed').length;
+    const failedCount = processedJobs.filter(j => j.status === 'failed').length;
+    alert(`✅ Hoàn thành! ${completedCount} thành công, ${failedCount} thất bại`);
   };
 
   // 4. Download Job ZIP: Tải kết quả 1 job
   const handleDownloadBatchJob = async (job: BatchJob) => {
     const zip = new JSZip();
-    const folderName = `script_${job.id}`;
+    const folderName = `script_${job.id} `;
     const folder = zip.folder(folderName);
 
     if (job.outputs[2]) folder?.file('step2_outline.txt', job.outputs[2]);
@@ -480,7 +550,9 @@ export default function Home() {
           const totalBatches = Math.ceil(sceneCount / 5);
           let fullOutline = "";
           for (let b = 0; b < totalBatches; b++) {
-            setProgress({ current: b + 1, total: totalBatches, message: `Creating Outline Batch ${b + 1}/${totalBatches} (Validate Word Count)...` });
+            setProgress({
+              current: b + 1, total: totalBatches, message: `Creating Outline Batch ${b + 1}/${totalBatches} (Validate Word Count)...`
+            });
             // Pass Min/Max to validation logic
             const chunk = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount, wordCountMin, wordCountMax);
             if (chunk === "END_OF_OUTLINE") break;
