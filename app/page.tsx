@@ -16,6 +16,7 @@ import {
   createMetadata
 } from '@/services/geminiService';
 import { apiKeyManager, ApiKeyInfo, KeyManagerState } from '@/lib/apiKeyManager';
+import { Language, LANGUAGE_CONFIGS, getLanguageConfig } from '@/lib/languageConfig';
 
 import StepProgressBar from '@/components/StepProgressBar';
 import WandIcon from '@/components/icons/WandIcon';
@@ -70,6 +71,19 @@ export default function Home() {
   const [promptsLibrary, setPromptsLibrary] = useState<SystemPromptData[]>([]);
   const [availablePacks, setAvailablePacks] = useState<PromptPackManifest[]>([]);
   const [selectedPromptIds, setSelectedPromptIds] = useState<{ [key: number]: string }>({});
+
+  // Language Selection (Phase 11)
+  const [language, setLanguage] = useState<Language>('vi');
+  const langConfig = getLanguageConfig(language);
+
+  // Filter packs by language
+  const filteredPacks = useMemo(() => {
+    return availablePacks.filter(pack => {
+      // Check manifest for language field, default to 'vi' if not specified
+      const packLang = (pack as any).language || 'vi';
+      return packLang === language;
+    });
+  }, [availablePacks, language]);
 
   // Admin & UI
   const [showAdmin, setShowAdmin] = useState(false);
@@ -682,6 +696,23 @@ export default function Home() {
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
+            {/* LANGUAGE SELECTOR */}
+            <select
+              value={language}
+              onChange={(e) => {
+                setLanguage(e.target.value as Language);
+                // Reset prompt selections when language changes
+                setSelectedPromptIds({});
+              }}
+              className="bg-slate-800 border border-amber-500 rounded px-3 py-2 text-sm font-bold focus:ring-amber-500 cursor-pointer hover:bg-slate-700 transition-colors"
+            >
+              {Object.values(LANGUAGE_CONFIGS).map(config => (
+                <option key={config.id} value={config.id}>
+                  {config.flag} {config.name}
+                </option>
+              ))}
+            </select>
+
             {/* PACK SELECTOR */}
             <div className="relative group">
               <select
@@ -689,8 +720,8 @@ export default function Home() {
                 className="bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-sky-400 font-bold focus:ring-sky-500 cursor-pointer hover:bg-slate-700 transition-colors appearance-none pr-8"
                 defaultValue=""
               >
-                <option value="" disabled>--- Chọn Bộ AI Workforce ---</option>
-                {availablePacks.map(pack => (
+                <option value="" disabled>{language === 'vi' ? '--- Chọn Bộ AI Workforce ---' : '--- Select AI Workforce ---'}</option>
+                {filteredPacks.map(pack => (
                   <option key={pack.id} value={pack.id}>{pack.name} (v{pack.version})</option>
                 ))}
               </select>

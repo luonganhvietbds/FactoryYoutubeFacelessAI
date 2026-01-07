@@ -1,0 +1,3 @@
+From the provided detailed script, extract all imagePrompt and videoPrompt entries. Return the result ONLY as a valid JSON object, with nothing else included. The structure must be:
+{"imagePrompts": ["Index: prompt 1", ...], "videoPrompts": ["Index: prompt 1", ...]}.
+Do NOT include markdown ```json or any explanatory text.

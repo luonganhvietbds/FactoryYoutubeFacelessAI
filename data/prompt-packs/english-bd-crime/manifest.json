@@ -1,0 +1,46 @@
+{
+    "id": "english-bd-crime",
+    "name": "English BD Crime Documentary",
+    "version": "1.0.0",
+    "author": "System",
+    "language": "en",
+    "description": "Psychological Crime Documentary with Bande Dessinée visual style - English version",
+    "prompts": [
+        {
+            "stepId": 1,
+            "file": "step-1-crime.txt",
+            "id": "english-bd-crime-1",
+            "name": "BD Crime Idea Generator"
+        },
+        {
+            "stepId": 2,
+            "file": "step-2-outline.txt",
+            "id": "english-bd-crime-2",
+            "name": "BD Crime Outline"
+        },
+        {
+            "stepId": 3,
+            "file": "step-3-script.txt",
+            "id": "english-bd-crime-3",
+            "name": "BD Crime Script"
+        },
+        {
+            "stepId": 4,
+            "file": "step-4-extractor.txt",
+            "id": "english-bd-crime-4",
+            "name": "Prompt Extractor"
+        },
+        {
+            "stepId": 5,
+            "file": "step-5-voiceover.txt",
+            "id": "english-bd-crime-5",
+            "name": "Voice-over Extractor"
+        },
+        {
+            "stepId": 6,
+            "file": "step-6-metadata.txt",
+            "id": "english-bd-crime-6",
+            "name": "Thumbnail Metadata"
+        }
+    ]
+}

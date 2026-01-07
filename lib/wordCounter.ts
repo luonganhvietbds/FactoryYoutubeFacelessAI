@@ -33,6 +33,36 @@ export const countVietnameseWords = (text: string): number => {
 };
 
 /**
+ * Counts English words by splitting on whitespace.
+ * Standard word counting for English text.
+ * 
+ * @param text - The English text to count words in
+ * @returns Number of words
+ */
+export const countEnglishWords = (text: string): number => {
+    if (!text || text.trim().length === 0) return 0;
+
+    // Remove common punctuation and split
+    const cleaned = text
+        .replace(/[.,;:!?"'""''()—–\-\[\]{}]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const words = cleaned.split(/\s+/).filter(w => w.length > 0);
+    return words.length;
+};
+
+/**
+ * Language-aware word counter
+ * @param text - Text to count
+ * @param lang - Language code ('vi' or 'en')
+ * @returns Word count
+ */
+export const countWords = (text: string, lang: 'vi' | 'en' = 'vi'): number => {
+    return lang === 'vi' ? countVietnameseWords(text) : countEnglishWords(text);
+};
+
+/**
  * Extracts the voiceover content from a scene block, removing the word count annotation.
  * 
  * @param sceneText - The full scene text containing "Lời dẫn: ... (X từ)"
