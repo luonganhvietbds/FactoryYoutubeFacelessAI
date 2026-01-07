@@ -301,6 +301,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
             // Refresh
             const data = await RegistryService.fetchFullRegistry();
             setPacks(data.packs);
+            onUpdatePrompts(data.prompts);
         } catch (e: any) {
             console.error(e);
             alert("Lỗi cập nhật Pack: " + e.message);
@@ -797,7 +798,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                                         <div className="relative z-10">
                                                             <div className="flex justify-between items-start mb-4">
                                                                 <span className="text-[10px] font-mono font-bold text-sky-400 bg-sky-950/50 px-2 py-1 rounded border border-sky-900/50">v{pack.version}</span>
-                                                                {(pack as any).isCloud && <span className="text-[10px] font-bold text-sky-300 bg-sky-900/30 px-2 py-1 rounded">☁️ Cloud</span>}
+                                                                <div className="flex gap-2">
+                                                                    {(pack as any).language && (
+                                                                        <span className={`text-[10px] font-bold px-2 py-1 rounded ${(pack as any).language === 'en' ? 'text-amber-300 bg-amber-900/30' : 'text-green-300 bg-green-900/30'}`}>
+                                                                            {(pack as any).language === 'en' ? '🇺🇸' : '🇻🇳'}
+                                                                        </span>
+                                                                    )}
+                                                                    {(pack as any).isCloud && <span className="text-[10px] font-bold text-sky-300 bg-sky-900/30 px-2 py-1 rounded">☁️ Cloud</span>}
+                                                                </div>
                                                             </div>
                                                             <h3 className="text-xl font-bold text-white mb-2 group-hover:text-sky-400 transition-colors">{pack.name}</h3>
                                                             <p className="text-sm text-slate-400 line-clamp-2 h-10 mb-6 group-hover:text-slate-300 transition-colors">{pack.description || "No description provided."}</p>
