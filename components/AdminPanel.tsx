@@ -197,40 +197,52 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
         setSaveStatus('idle');
     };
 
-    // SAVE PROMPT -> FIRESTORE
+    // SAVE PROMPT -> FIRESTORE (Direct Cloud Save)
     const handleSavePrompt = async () => {
-        if (!editingPromptId || !editForm.packId) return;
+        if (!editingPromptId || !editForm.packId) {
+            alert("Lỗi: Thiếu thông tin Pack hoặc Prompt ID.");
+            return;
+        }
         setSaveStatus('saving');
 
         try {
             const packRef = doc(db, "prompt_packs", editForm.packId);
             const stepKey = `step${editForm.stepId}`;
+            const newPromptId = editingPromptId.startsWith('NEW_')
+                ? `${editForm.packId}-step-${editForm.stepId}`
+                : editingPromptId;
 
-            // Update ONLY the specific step in the prompts map
-            await updateDoc(packRef, {
-                [`prompts.${stepKey}`]: {
-                    id: editingPromptId.startsWith('NEW_') ? `${editForm.packId}-step-${editForm.stepId}` : editingPromptId,
-                    name: editForm.name,
-                    content: editForm.content
+            // Use setDoc with merge to create or update
+            await setDoc(packRef, {
+                prompts: {
+                    [stepKey]: {
+                        id: newPromptId,
+                        name: editForm.name || `Step ${editForm.stepId}`,
+                        content: editForm.content || ''
+                    }
                 },
                 updatedAt: new Date().toISOString()
-            });
+            }, { merge: true });
 
             setSaveStatus('saved');
-            setInitLog(prev => [...prev, `💾 Đã lưu prompt: ${editForm.name}`]);
+            console.log(`✅ Saved prompt: ${editForm.name} to Firestore`);
 
-            // Refresh data
+            // Refresh data from cloud
             setTimeout(async () => {
-                const data = await RegistryService.fetchFullRegistry();
-                setPacks(data.packs);
-                onUpdatePrompts(data.prompts);
+                try {
+                    const data = await RegistryService.fetchFullRegistry();
+                    setPacks(data.packs);
+                    onUpdatePrompts(data.prompts);
+                } catch (e) {
+                    console.error("Refresh error:", e);
+                }
                 setEditingPromptId(null);
                 setSaveStatus('idle');
-            }, 500);
+            }, 800);
 
         } catch (e: any) {
-            console.error(e);
-            alert("Lỗi lưu Prompt: " + e.message);
+            console.error("Firestore save error:", e);
+            alert(`Lỗi lưu Prompt vào Cloud: ${e.message}\n\nHãy đảm bảo:\n1. Firestore Rules đã được cập nhật\n2. Pack đã tồn tại trên Cloud (dùng nút 'Tạo Data' trước)`);
             setSaveStatus('idle');
         }
     };
