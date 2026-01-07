@@ -141,6 +141,12 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
             sceneBlocks.forEach((block, idx) => {
                 const currentSceneNum = startScene + idx;
 
+                // IMPORTANT: Only validate scenes within the requested batch range
+                // Ignore any extra scenes Gemini may have generated beyond our request
+                if (currentSceneNum > endScene) {
+                    return; // Skip validation for scenes beyond our batch
+                }
+
                 // Extract voiceover content (ignoring AI's annotation)
                 const voMatch = block.match(/Lời dẫn:\s*([\s\S]*?)(?:\s*\(\d+\s*từ\)\s*)?(?=\n\n|$)/i);
 
@@ -174,10 +180,12 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
                 }
             });
 
-            // Check if we have the expected number of scenes
+            // Check if we have the expected number of scenes IN THE REQUESTED RANGE
             const expectedSceneCount = endScene - startScene + 1;
-            if (sceneBlocks.length < expectedSceneCount) {
-                validationErrors.push(`Thiếu ${expectedSceneCount - sceneBlocks.length} scene(s)`);
+            const validSceneCount = correctedScenes.length; // Only count scenes we actually validated
+
+            if (validSceneCount < expectedSceneCount) {
+                validationErrors.push(`Thiếu ${expectedSceneCount - validSceneCount} scene(s)`);
             }
 
             // If validation passed, return corrected response
