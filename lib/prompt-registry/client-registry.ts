@@ -36,6 +36,7 @@ export const RegistryService = {
                     version: data.version,
                     author: data.author,
                     description: data.description,
+                    language: data.language, // Phase 11: Multi-language support
                     // Check logic for 'prompts' in manifest (metadata) vs actual content
                     prompts: [], // Fill from map below
                     isValid: true
