@@ -25,6 +25,7 @@ export interface PromptPackManifest {
     version: string;
     author: string;
     description?: string;
+    language?: 'vi' | 'en'; // Phase 11: Multi-language support
     prompts: {
         stepId: number;
         file: string;

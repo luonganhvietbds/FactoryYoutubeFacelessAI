@@ -4,6 +4,7 @@
     "version": "1.0.0",
     "author": "System",
     "description": "Chuyên gia sản xuất phim tài liệu tội phạm phong cách truyện tranh Pháp (Bande Dessinée).",
+    "language": "vi",
     "prompts": [
         {
             "stepId": 1,

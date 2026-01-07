@@ -45,7 +45,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
 
     // Create Pack State
     const [showCreatePackModal, setShowCreatePackModal] = useState(false);
-    const [newPackForm, setNewPackForm] = useState({ id: '', name: '', description: '', author: '' });
+    const [newPackForm, setNewPackForm] = useState({ id: '', name: '', description: '', author: '', language: 'vi' as 'vi' | 'en' });
 
     // Edit Pack Meta State
     const [isEditingPackMeta, setIsEditingPackMeta] = useState(false);
@@ -332,6 +332,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                 description: newPackForm.description || "",
                 author: newPackForm.author || "Admin",
                 version: "1.0.0",
+                language: newPackForm.language, // Phase 11: Multi-language support
                 isPublic: true,
                 prompts: emptyPrompts,
                 createdAt: new Date().toISOString(),
@@ -340,7 +341,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
 
             alert(`✅ Pack "${newPackForm.name}" đã được tạo!`);
             setShowCreatePackModal(false);
-            setNewPackForm({ id: '', name: '', description: '', author: '' });
+            setNewPackForm({ id: '', name: '', description: '', author: '', language: 'vi' });
 
             // Refresh
             const data = await RegistryService.fetchFullRegistry();
@@ -508,6 +509,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                     placeholder="DMP AI Team"
                                     className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-sky-500 outline-none"
                                 />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">Ngôn ngữ</label>
+                                <select
+                                    value={newPackForm.language}
+                                    onChange={e => setNewPackForm({ ...newPackForm, language: e.target.value as 'vi' | 'en' })}
+                                    className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-sky-500 outline-none"
+                                >
+                                    <option value="vi">🇻🇳 Tiếng Việt</option>
+                                    <option value="en">🇺🇸 English</option>
+                                </select>
                             </div>
                         </div>
                         <div className="p-6 border-t border-slate-800 flex gap-4">

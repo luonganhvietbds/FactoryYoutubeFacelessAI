@@ -4,6 +4,7 @@
     "version": "1.0.0",
     "author": "System",
     "description": "Basic prompts and essential extractors (JSON, Voice Over).",
+    "language": "vi",
     "prompts": [
         {
             "stepId": 1,
