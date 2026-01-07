@@ -27,6 +27,9 @@ import ImageIcon from '@/components/icons/ImageIcon';
 import VideoIcon from '@/components/icons/VideoIcon';
 import AdminPanel from '@/components/AdminPanel';
 import SaveIcon from '@/components/icons/SaveIcon';
+import DownloadIcon from '@/components/icons/DownloadIcon'; // New Icon
+import JSZip from 'jszip'; // For Zip Download
+import { saveAs } from 'file-saver'; // For File Save
 
 
 // --- HELPERS ---
@@ -59,6 +62,7 @@ export default function Home() {
   // Settings & Inputs
   const [topicKeyword, setTopicKeyword] = useState<string>('');
   const [sceneCount, setSceneCount] = useState<number>(45);
+  const [wordCountLimit, setWordCountLimit] = useState<number>(50); // New State: Word Count per VO
   const [apiKey, setApiKey] = useState<string>('');
   const [saveApiKey, setSaveApiKey] = useState<boolean>(false);
 
@@ -323,6 +327,27 @@ export default function Home() {
     if (src) { setStepOutputs(prev => ({ ...prev, [src]: editableInput })); setUpdateSuccessMessage('Cập nhật thành công!'); setTimeout(() => setUpdateSuccessMessage(''), 3000); }
   };
 
+  // --- DOWNLOAD LOGIC ---
+  const handleDownloadSingle = (stepId: number, content: string) => {
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    saveAs(blob, `step-${stepId}-result.txt`);
+  };
+
+  const handleDownloadAllZip = async () => {
+    const zip = new JSZip();
+    const folder = zip.folder("script_factory_output");
+
+    // Add all existing outputs to zip
+    STEPS_CONFIG.forEach(step => {
+      if (stepOutputs[step.id]) {
+        folder?.file(`step-${step.id}-${step.id === 1 ? 'research' : step.id === 2 ? 'outline' : step.id === 3 ? 'script' : step.id === 4 ? 'prompts' : step.id === 5 ? 'voice' : 'meta'}.txt`, stepOutputs[step.id]!);
+      }
+    });
+
+    const content = await zip.generateAsync({ type: "blob" });
+    saveAs(content, "ai_script_factory_full_project.zip");
+  };
+
   const renderSplitPromptView = (output: string) => { /* Same as before, omitted for brevity, will restore in full overwrite */
     // ... Re-implement full logic to avoid breaking ...
     let imagePrompts: string[] = [], videoPrompts: string[] = [];
@@ -400,6 +425,13 @@ export default function Home() {
               {isBatchMode ? '📦 Batch Mode' : '📦 Batch Mode'}
             </button>
             <button onClick={handleAdminLogin} className="text-slate-500 hover:text-sky-400 p-2"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M8 11h8" /><path d="M12 7v8" /></svg></button>
+            <button
+              onClick={handleDownloadAllZip}
+              className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg"
+              title="Tải toàn bộ kết quả (.zip)"
+            >
+              <DownloadIcon className="w-5 h-5" /> <span>ZIP ALL</span>
+            </button>
           </div>
         </header>
 
@@ -443,7 +475,30 @@ export default function Home() {
                 </div>
                 <div className="flex-grow overflow-auto mb-4 custom-scrollbar">
                   {viewingStep === 1 && <input type="text" value={topicKeyword} onChange={e => setTopicKeyword(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-3" placeholder="Keyword..." />}
-                  {viewingStep === 2 && <input type="range" min="5" max="100" value={sceneCount} onChange={e => setSceneCount(Number(e.target.value))} className="w-full" />}
+                  {viewingStep === 1 && <input type="text" value={topicKeyword} onChange={e => setTopicKeyword(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-3" placeholder="Keyword..." />}
+
+                  {viewingStep === 2 && (
+                    <div className="space-y-4 mb-4">
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 uppercase flex justify-between">
+                          <span>Scene Count (Số cảnh)</span>
+                          <span className="text-sky-400">{sceneCount} scenes</span>
+                        </label>
+                        <input type="range" min="5" max="100" value={sceneCount} onChange={e => setSceneCount(Number(e.target.value))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer mt-2" />
+                        <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1"><span>Min: 5</span><span>Max: 100</span></div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 uppercase flex justify-between">
+                          <span>Word Limit / VO (Giới hạn từ/câu)</span>
+                          <span className="text-indigo-400">{wordCountLimit} words</span>
+                        </label>
+                        <input type="range" min="10" max="200" value={wordCountLimit} onChange={e => setWordCountLimit(Number(e.target.value))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer mt-2" />
+                        <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1"><span>Min: 10</span><span>Max: 200</span></div>
+                      </div>
+                    </div>
+                  )}
+
                   {getInputForStep(viewingStep) && viewingStep !== 1 && (
                     <textarea value={editableInput} onChange={e => setEditableInput(e.target.value)} rows={10} className="w-full bg-slate-900 border border-slate-700 rounded p-3 text-sm text-slate-300" />
                   )}
@@ -454,10 +509,35 @@ export default function Home() {
                   {error && <p className="text-red-400 text-sm mt-2 text-center">{error}</p>}
                 </div>
               </div>
-              <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex flex-col h-[750px]">
-                <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-700"><h2 className="text-lg font-bold text-white">Result</h2>{stepOutputs[viewingStep] && <button onClick={handleCopyResult}><CopyIcon className="h-5 w-5" /></button>}</div>
-                <div className={`bg-slate-900 rounded p-4 flex-grow overflow-auto border border-slate-700 ${viewingStep === 4 ? 'p-0' : ''}`}>
-                  {isLoading && viewingStep === currentStep ? <LoadingSpinnerIcon className="h-10 w-10 animate-spin text-sky-500 m-auto" /> :
+              <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex flex-col h-[750px] relative">
+                <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-700">
+                  <h2 className="text-lg font-bold text-white">Result</h2>
+                  <div className="flex gap-2">
+                    {stepOutputs[viewingStep] && (
+                      <button onClick={() => handleDownloadSingle(viewingStep, stepOutputs[viewingStep]!)} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 transition-colors" title="Download .txt">
+                        <DownloadIcon className="h-4 w-4" />
+                      </button>
+                    )}
+                    {stepOutputs[viewingStep] && <button onClick={handleCopyResult} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 transition-colors"><CopyIcon className="h-4 w-4" /></button>}
+                  </div>
+                </div>
+                <div className={`bg-slate-900 rounded p-4 flex-grow overflow-auto border border-slate-700 relative ${viewingStep === 4 ? 'p-0' : ''}`}>
+                  {/* PROGRESS OVERLAY */}
+                  {isLoading && progress && (
+                    <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 p-6 text-center">
+                      <LoadingSpinnerIcon className="h-10 w-10 animate-spin text-sky-500 mb-4" />
+                      <h3 className="text-lg font-bold text-white mb-2">{progress.message}</h3>
+                      <div className="w-64 h-2 bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-sky-500 to-indigo-500 transition-all duration-300 ease-out"
+                          style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                        ></div>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-2">Đang xử lý bước {progress.current}/{progress.total}</p>
+                    </div>
+                  )}
+
+                  {isLoading && viewingStep === currentStep && !progress ? <LoadingSpinnerIcon className="h-10 w-10 animate-spin text-sky-500 m-auto" /> :
                     (viewingStep === 4 && stepOutputs[viewingStep] ? renderSplitPromptView(stepOutputs[viewingStep]!) : <div className="whitespace-pre-wrap text-sm text-slate-200">{stepOutputs[viewingStep]}</div>)
                   }
                 </div>
