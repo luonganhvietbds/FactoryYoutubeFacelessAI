@@ -6,6 +6,68 @@ import { PromptPackManifest, SystemPromptData } from '@/lib/types';
 // Define explicit path to data directory
 const DATA_DIR = path.join(process.cwd(), 'data/prompt-packs');
 
+export async function POST(req: Request) {
+    try {
+        const body = await req.json();
+        const { packId, stepId, name, content } = body;
+
+        if (!packId || !stepId || !name) {
+            return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+        }
+
+        // 1. Find Pack Directory
+        if (!fs.existsSync(DATA_DIR)) return NextResponse.json({ error: 'Data dir missing' }, { status: 500 });
+        const packDirs = fs.readdirSync(DATA_DIR);
+        const targetDirName = packDirs.find(dir => {
+            const p = path.join(DATA_DIR, dir, 'manifest.json');
+            if (fs.existsSync(p)) {
+                const m = JSON.parse(fs.readFileSync(p, 'utf8'));
+                return m.id === packId;
+            }
+            return false;
+        });
+
+        if (!targetDirName) return NextResponse.json({ error: 'Pack not found' }, { status: 404 });
+
+        const packPath = path.join(DATA_DIR, targetDirName);
+        const manifestPath = path.join(packPath, 'manifest.json');
+
+        // 2. Generate Filename and ID
+        const safeName = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        const fileName = `step-${stepId}-${safeName}.txt`;
+        const filePath = path.join(packPath, fileName);
+        const promptId = `${packId}_S${stepId}_${safeName}`.toUpperCase().replace(/-/g, '_');
+
+        // 3. Write File
+        fs.writeFileSync(filePath, content || '');
+
+        // 4. Update Manifest
+        const manifest: PromptPackManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+        if (!manifest.prompts) manifest.prompts = [];
+
+        // Remove existing entry for this step if exists (overwrite logic)
+        manifest.prompts = manifest.prompts.filter(p => p.stepId !== stepId);
+
+        manifest.prompts.push({
+            id: promptId,
+            name: name,
+            stepId: stepId,
+            file: fileName
+        });
+
+        // Re-sort prompts by stepId
+        manifest.prompts.sort((a, b) => a.stepId - b.stepId);
+
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+        return NextResponse.json({ success: true, promptId });
+
+    } catch (error) {
+        console.error('[Registry Create] Error:', error);
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    }
+}
+
 export async function GET() {
     try {
         // 1. Check if directory exists

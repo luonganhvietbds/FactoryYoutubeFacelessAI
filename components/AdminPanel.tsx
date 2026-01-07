@@ -62,22 +62,65 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
         setSaveStatus('idle');
     };
 
-    const handleSavePrompt = () => {
+    const handleCreatePromptForStep = (packId: string, stepId: number) => {
+        const dummyId = `NEW_${Date.now()}`;
+        setEditingPromptId(dummyId);
+        setEditForm({
+            id: dummyId,
+            packId: packId,
+            stepId: stepId,
+            name: `Step ${stepId} Prompt`,
+            content: ''
+        });
+        setSaveStatus('idle');
+    };
+
+    const handleSavePrompt = async () => {
         if (!editingPromptId) return;
         setSaveStatus('saving');
 
-        // Simulate network delay for UX
-        setTimeout(() => {
-            const updatedPrompts = prompts.map(p =>
-                p.id === editingPromptId ? { ...p, ...editForm } as SystemPromptData : p
-            );
-            onUpdatePrompts(updatedPrompts);
-            setSaveStatus('saved');
-            setTimeout(() => {
-                setEditingPromptId(null);
-                setSaveStatus('idle');
-            }, 500);
-        }, 600);
+        try {
+            // Check if Creating NEW (for a Pack)
+            if (editingPromptId.startsWith('NEW_') && editForm.packId) {
+                const res = await fetch('/api/registry', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        packId: editForm.packId,
+                        stepId: editForm.stepId,
+                        name: editForm.name,
+                        content: editForm.content
+                    })
+                });
+                if (!res.ok) throw new Error("Failed to create prompt file");
+
+                // Refresh Data
+                const data = await RegistryService.fetchFullRegistry();
+                setPacks(data.packs);
+                onUpdatePrompts(data.prompts); // Force update page state with server data
+                setSaveStatus('saved');
+                setTimeout(() => { setEditingPromptId(null); setSaveStatus('idle'); }, 500);
+
+            } else {
+                // EDITING EXISTING (Local Override logic)
+                // Simulate network delay for UX
+                setTimeout(() => {
+                    const updatedPrompts = prompts.map(p =>
+                        p.id === editingPromptId ? { ...p, ...editForm } as SystemPromptData : p
+                    );
+                    onUpdatePrompts(updatedPrompts);
+                    setSaveStatus('saved');
+                    setTimeout(() => {
+                        setEditingPromptId(null);
+                        setSaveStatus('idle');
+                    }, 500);
+                }, 600);
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error saving prompt: " + e);
+            setSaveStatus('idle');
+        }
     };
 
     const handleAddCustom = () => {
@@ -391,20 +434,29 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                                                                         <code className="text-[10px] text-slate-500 bg-slate-950 px-2 py-1 rounded block w-fit mb-4">{promptData.id}</code>
                                                                                     </>
                                                                                 ) : (
-                                                                                    <div className="flex flex-col items-start gap-2">
+                                                                                    <div className="flex flex-col items-start gap-2 mb-4 h-12 justify-center">
                                                                                         <span className="text-slate-500 italic text-sm">No prompt assigned.</span>
                                                                                         {pack.isValid === false && <span className="text-red-400 text-xs font-bold bg-red-900/20 px-2 py-1 rounded border border-red-900/50">⚠️ REQUIRED</span>}
                                                                                     </div>
                                                                                 )}
                                                                             </div>
 
-                                                                            {promptData && (
+                                                                            {promptData ? (
                                                                                 <div className="mt-auto">
                                                                                     <button
                                                                                         onClick={() => handleEditPrompt(promptData)}
                                                                                         className="w-full py-2.5 bg-slate-800 hover:bg-sky-600/20 hover:text-sky-400 border border-slate-700 hover:border-sky-500/30 rounded-lg text-sm text-slate-300 font-medium transition-all flex items-center justify-center gap-2"
                                                                                     >
                                                                                         <EditIcon className="w-4 h-4" /> Edit Content
+                                                                                    </button>
+                                                                                </div>
+                                                                            ) : (
+                                                                                <div className="mt-auto">
+                                                                                    <button
+                                                                                        onClick={() => handleCreatePromptForStep(pack.id, stepId)}
+                                                                                        className="w-full py-2.5 bg-slate-800 hover:bg-green-600/20 hover:text-green-400 border border-slate-700 hover:border-green-500/30 rounded-lg text-sm text-slate-300 font-medium transition-all flex items-center justify-center gap-2 group-hover:bg-green-900/10"
+                                                                                    >
+                                                                                        <span>+</span> Add Prompt
                                                                                     </button>
                                                                                 </div>
                                                                             )}
