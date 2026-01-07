@@ -196,16 +196,16 @@ export default function Home() {
     const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
     const outputs: StepOutputs = {};
     try {
-      // Step 2
-      const totalOutlineBatches = Math.ceil(sceneCount / 10);
+      // Step
+      const totalOutlineBatches = Math.ceil(sceneCount / 5); // Batch size reduced to 5 in Service
       let fullOutline = "";
       for (let b = 0; b < totalOutlineBatches; b++) {
-        setProgress({ current: 2, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Outline Batch ${b + 1}/${totalOutlineBatches}...` });
-        const chunk = await createOutlineBatch(apiKey, input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, sceneCount);
+        setProgress({ current: 2, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Outline Batch ${b + 1}/${totalOutlineBatches} (Strict Word Count)...` });
+        // Pass Min/Max
+        const chunk = await createOutlineBatch(apiKey, input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, sceneCount, wordCountMin, wordCountMax);
         if (chunk === "END_OF_OUTLINE") break;
         fullOutline += "\n" + chunk;
-      }
-      outputs[2] = fullOutline.trim();
+      } outputs[2] = fullOutline.trim();
       await wait(delayBetweenSteps);
 
       // Step 3
@@ -281,8 +281,9 @@ export default function Home() {
           const totalBatches = Math.ceil(sceneCount / 10);
           let fullOutline = "";
           for (let b = 0; b < totalBatches; b++) {
-            setProgress({ current: b + 1, total: totalBatches, message: `Creating Outline Batch ${b + 1}/${totalBatches}` });
-            const chunk = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount);
+            setProgress({ current: b + 1, total: totalBatches, message: `Creating Outline Batch ${b + 1}/${totalBatches} (Validate Word Count)...` });
+            // Pass Min/Max to validation logic
+            const chunk = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount, wordCountMin, wordCountMax);
             if (chunk === "END_OF_OUTLINE") break;
             fullOutline += "\n" + chunk;
           }

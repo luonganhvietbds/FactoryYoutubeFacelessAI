@@ -59,23 +59,30 @@ export const getNewsAndEvents = async (apiKey: string, keyword: string, systemPr
     return callGemini(apiKey, systemPrompt, `Chủ đề/Từ khóa cần tìm kiếm: "${keyword}"`, true);
 };
 
-// Bước 2: Tạo Dàn Ý - CẬP NHẬT: Batching 10 scenes/call
+// Bước 2: Tạo Dàn Ý - CẬP NHẬT: Batching 5 scenes/call + Strict Word Count
 export const createOutlineBatch = async (
     apiKey: string,
     newsData: string,
     systemPrompt: string,
     currentOutline: string,
     batchIndex: number,
-    sceneCount: number
+    sceneCount: number,
+    minWords: number,
+    maxWords: number
 ): Promise<string> => {
-    const SCENES_PER_BATCH = 10;
+    const SCENES_PER_BATCH = 5; // Reduced to 5 for precision
     const startScene = batchIndex * SCENES_PER_BATCH + 1;
     let endScene = startScene + SCENES_PER_BATCH - 1;
     if (endScene > sceneCount) endScene = sceneCount;
 
     if (startScene > sceneCount) return "END_OF_OUTLINE";
 
-    const userPrompt = `
+    let attempts = 0;
+    const MAX_ATTEMPTS = 3;
+    let feedback = "";
+
+    while (attempts < MAX_ATTEMPTS) {
+        const userPrompt = `
 Thông tin đầu vào (Tin tức/Sự kiện):
 ${newsData}
 
@@ -84,14 +91,66 @@ ${currentOutline.slice(-1000)}
 
 NHIỆM VỤ HIỆN TẠI (Batch scenes ${startScene} -> ${endScene}):
 Hãy lập tiếp dàn ý chi tiết cho các cảnh từ **Scene ${startScene}** đến **Scene ${endScene}**.
-Tổng số cảnh dự kiến của cả video là ${sceneCount}.
+Tổng số cảnh dự kiến: ${sceneCount}.
 
-QUY TẮC:
-1. Bắt đầu ngay với "**Scene ${startScene}: [Tên cảnh]**".
-2. Mô tả nội dung chính của cảnh.
-3. KHÔNG viết quá Scene ${endScene}.
+YÊU CẦU QUAN TRỌNG VỀ VOICE OVER (Lời dẫn):
+1. Mỗi cảnh PHẢI có mục "**Lời dẫn:**".
+2. Độ dài Lời dẫn PHẢI Tuyệt Đối nằm trong khoảng **${minWords} - ${maxWords} từ**.
+3. Cuối mỗi Lời dẫn, hãy ghi chú số từ thực tế trong ngoặc đơn. Ví dụ: (19 từ).
+
+${feedback ? `LƯU Ý: Lần sinh trước của bạn đã bị từ chối vì lý do sau: ${feedback}. Hãy sửa lại ngay lập tức.` : ""}
+
+QUY TẮC FORMAT:
+Scene ${startScene}: [Tên cảnh]
+Hình ảnh: [Mô tả hình ảnh]
+Lời dẫn: [Nội dung lời dẫn] (Số từ)
+
+... (tiếp tục đến Scene ${endScene})
 `;
-    return callGemini(apiKey, systemPrompt, userPrompt);
+
+        try {
+            const response = await callGemini(apiKey, systemPrompt, userPrompt);
+
+            // VALIDATION LOGIC
+            const validationErrors: string[] = [];
+            // Regex to find "Lời dẫn: ... (X từ)" or just the content
+            // Simple split by "Scene" to validate each
+            const sceneChunks = response.split(/Scene \d+:/).slice(1); // ignore pre-text
+
+            if (sceneChunks.length !== (endScene - startScene + 1)) {
+                // Relaxed check: if we got close to correct number of scenes, proceed, else strict
+                // validationErrors.push("Incorrect number of scenes generated.");
+            }
+
+            sceneChunks.forEach((chunk, idx) => {
+                const currentSceneNum = startScene + idx;
+                const match = chunk.match(/Lời dẫn:\s*([\s\S]*?)(?:\(\d+\s*từ\)|$)/i);
+                if (match) {
+                    const content = match[1].trim();
+                    // Count words (simple space split)
+                    const wordCount = content.split(/\s+/).filter(w => w.length > 0).length;
+                    if (wordCount < minWords || wordCount > maxWords) {
+                        validationErrors.push(`Scene ${currentSceneNum} has ${wordCount} words (Required: ${minWords}-${maxWords})`);
+                    }
+                } else {
+                    validationErrors.push(`Scene ${currentSceneNum} missing 'Lời dẫn' field.`);
+                }
+            });
+
+            if (validationErrors.length === 0) {
+                return response; // Success!
+            } else {
+                console.warn(`Attempt ${attempts + 1} failed validation:`, validationErrors);
+                feedback = validationErrors.join("; ");
+                attempts++;
+            }
+        } catch (e) {
+            console.error("Gemini Error:", e);
+            attempts++; // Retry on API error too
+        }
+    }
+
+    throw new Error(`Failed to generate valid scenes ${startScene}-${endScene} after ${MAX_ATTEMPTS} attempts. Last error: ${feedback}`);
 };
 
 // Bước 3: Tạo Kịch Bản Chi Tiết - CẬP NHẬT: Batching chính xác theo số cảnh
