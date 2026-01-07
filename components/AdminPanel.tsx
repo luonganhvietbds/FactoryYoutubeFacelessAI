@@ -117,18 +117,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                     const contentObj = allPrompts.find(ap => ap.id === promptMeta.id);
                     if (contentObj) {
                         pMap[`step${promptMeta.stepId}`] = {
-                            id: promptMeta.id,
-                            name: promptMeta.name,
-                            content: contentObj.content
+                            id: promptMeta.id || "",
+                            name: promptMeta.name || `Step ${promptMeta.stepId}`,
+                            content: contentObj.content || ""
                         };
                     }
                 });
 
                 const packPayload = {
-                    name: p.name,
+                    name: p.name || "Untitled Pack",
                     description: p.description || "",
-                    version: p.version,
-                    author: p.author,
+                    version: p.version || "1.0.0",
+                    author: p.author || "Admin",
                     isPublic: true,
                     prompts: pMap,
                     createdAt: new Date().toISOString(),
