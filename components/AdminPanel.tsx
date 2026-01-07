@@ -49,7 +49,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
 
     // Edit Pack Meta State
     const [isEditingPackMeta, setIsEditingPackMeta] = useState(false);
-    const [editPackForm, setEditPackForm] = useState({ name: '', description: '', author: '' });
+    const [editPackForm, setEditPackForm] = useState({ name: '', description: '', author: '', language: 'vi' as 'vi' | 'en' });
 
     // Stats
     const totalEditablePrompts = prompts.length;
@@ -291,6 +291,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                 name: editPackForm.name,
                 description: editPackForm.description,
                 author: editPackForm.author,
+                language: editPackForm.language,
                 updatedAt: new Date().toISOString()
             }, { merge: true });
 
@@ -572,6 +573,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                     className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-sky-500 outline-none"
                                 />
                             </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">Ngôn ngữ</label>
+                                <select
+                                    value={editPackForm.language}
+                                    onChange={e => setEditPackForm({ ...editPackForm, language: e.target.value as 'vi' | 'en' })}
+                                    className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-sky-500 outline-none"
+                                >
+                                    <option value="vi">🇻🇳 Tiếng Việt</option>
+                                    <option value="en">🇺🇸 English</option>
+                                </select>
+                            </div>
                         </div>
                         <div className="p-6 border-t border-slate-800 flex gap-4">
                             <button
@@ -830,7 +842,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                                                             setEditPackForm({
                                                                                 name: pack.name,
                                                                                 description: pack.description || '',
-                                                                                author: pack.author || ''
+                                                                                author: pack.author || '',
+                                                                                language: (pack as any).language || 'vi'
                                                                             });
                                                                             setIsEditingPackMeta(true);
                                                                         }}
@@ -839,6 +852,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                                                         <EditIcon className="w-5 h-5" />
                                                                     </button>
                                                                     {(pack as any).isCloud && <span className="text-sky-300 bg-sky-900/30 px-3 py-1 rounded text-sm font-bold">☁️ Cloud Pack</span>}
+                                                                    <span className={`px-3 py-1 rounded text-sm font-bold ${(pack as any).language === 'en' ? 'text-amber-300 bg-amber-900/30' : 'text-green-300 bg-green-900/30'}`}>
+                                                                        {(pack as any).language === 'en' ? '🇺🇸 English' : '🇻🇳 Tiếng Việt'}
+                                                                    </span>
                                                                 </div>
                                                                 <p className="text-slate-400 text-lg max-w-2xl">{pack.description}</p>
                                                             </div>
