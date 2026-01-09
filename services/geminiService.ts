@@ -162,7 +162,13 @@ export const createOutlineBatch = async (
 
     if (startScene > sceneCount) return { content: "END_OF_OUTLINE", warnings: [] };
 
-    const userPrompt = `
+    let attempts = 0;
+    const MAX_RETRIES = 3;
+    let feedback = "";
+    let lastResult: OutlineBatchResult = { content: "FAILED", warnings: [] };
+
+    while (attempts < MAX_RETRIES) {
+        const userPrompt = `
 Thông tin đầu vào (Tin tức/Sự kiện):
 ${newsData}
 
@@ -189,113 +195,114 @@ Hình ảnh: [Mô tả hình ảnh chi tiết]
 Lời dẫn: [Nội dung lời dẫn] (Số từ)
 
 ... (tiếp tục đến Scene ${endScene})
-`;
+` + feedback; // Append feedback if this is a retry
 
-    try {
-        const rawResponse = await callGemini(apiKey, systemPrompt, userPrompt);
+        try {
+            console.log(`🚀 Batch ${batchIndex + 1} Attempt ${attempts + 1}/${MAX_RETRIES}...`);
+            const rawResponse = await callGemini(apiKey, systemPrompt, userPrompt);
 
-        // ========== POST-CORRECTION ENGINE ==========
-        const sceneBlocks = rawResponse.split(/(?=Scene \d+:)/i).filter(block => /^Scene \d+:/i.test(block.trim()));
-        const warnings: SceneWarning[] = [];
-        const correctedScenes: string[] = [];
+            // ========== POST-CORRECTION ENGINE ==========
+            const sceneBlocks = rawResponse.split(/(?=Scene \d+:)/i).filter(block => /^Scene \d+:/i.test(block.trim()));
+            const warnings: SceneWarning[] = [];
+            const correctedScenes: string[] = [];
 
-        sceneBlocks.forEach((block, idx) => {
-            const currentSceneNum = startScene + idx;
-            if (currentSceneNum > endScene) return;
+            // Check for missing scenes first
+            const expectedSceneCount = endScene - startScene + 1;
 
-            const voMatch = block.match(/Lời dẫn:\s*([\s\S]*?)(?:\s*\(\d+\s*từ\)\s*)?(?=\n\n|$)/i);
+            sceneBlocks.forEach((block, idx) => {
+                const currentSceneNum = startScene + idx;
+                if (currentSceneNum > endScene) return;
 
-            if (voMatch && voMatch[1]) {
-                const rawContent = voMatch[1]
-                    .replace(/\(\d+\s*từ\)/g, '')
-                    .replace(/\*\*/g, '')
-                    .trim();
+                const voMatch = block.match(/Lời dẫn:\s*([\s\S]*?)(?:\s*\(\d+\s*từ\)\s*)?(?=\n\n|$)/i);
 
-                const actualWordCount = countVietnameseWords(rawContent);
+                if (voMatch && voMatch[1]) {
+                    const rawContent = voMatch[1]
+                        .replace(/\(\d+\s*từ\)/g, '')
+                        .replace(/\*\*/g, '')
+                        .trim();
 
-                // GRACEFUL MODE: Collect warning instead of failing
-                if (actualWordCount < minWords || actualWordCount > maxWords) {
-                    const diff = actualWordCount > maxWords
-                        ? actualWordCount - maxWords
-                        : actualWordCount - minWords;
+                    const actualWordCount = countVietnameseWords(rawContent);
 
+                    // Validate constraints
+                    if (actualWordCount < minWords || actualWordCount > maxWords) {
+                        const diff = actualWordCount > maxWords
+                            ? actualWordCount - maxWords
+                            : actualWordCount - minWords;
+
+                        warnings.push({
+                            sceneNum: currentSceneNum,
+                            actual: actualWordCount,
+                            target: targetWords,
+                            tolerance: tolerance,
+                            diff: diff
+                        });
+                    }
+
+                    // Always correct annotation
+                    const correctedBlock = block.replace(
+                        /Lời dẫn:\s*[\s\S]*?(?:\(\d+\s*từ\))?(?=\n\n|$)/i,
+                        `Lời dẫn: ${rawContent} (${actualWordCount} từ)`
+                    );
+                    correctedScenes.push(correctedBlock);
+                } else {
+                    // Missing voiceover
                     warnings.push({
                         sceneNum: currentSceneNum,
-                        actual: actualWordCount,
+                        actual: 0,
                         target: targetWords,
                         tolerance: tolerance,
-                        diff: diff
+                        diff: -targetWords
                     });
-
-                    console.warn(`⚠️ Scene ${currentSceneNum}: ${actualWordCount} words (target: ${minWords}-${maxWords}, diff: ${diff > 0 ? '+' : ''}${diff})`);
+                    correctedScenes.push(block);
                 }
-
-                // Always correct annotation with accurate count
-                const correctedBlock = block.replace(
-                    /Lời dẫn:\s*[\s\S]*?(?:\(\d+\s*từ\))?(?=\n\n|$)/i,
-                    `Lời dẫn: ${rawContent} (${actualWordCount} từ)`
-                );
-                correctedScenes.push(correctedBlock);
-            } else {
-                // Missing voiceover - still accept but log warning
-                warnings.push({
-                    sceneNum: currentSceneNum,
-                    actual: 0,
-                    target: targetWords,
-                    tolerance: tolerance,
-                    diff: -targetWords
-                });
-                console.warn(`⚠️ Scene ${currentSceneNum}: Missing 'Lời dẫn'`);
-                correctedScenes.push(block);
-            }
-        });
-
-        // Check for missing scenes
-        const expectedSceneCount = endScene - startScene + 1;
-        if (correctedScenes.length < expectedSceneCount) {
-            const missing = expectedSceneCount - correctedScenes.length;
-            console.warn(`⚠️ Batch ${batchIndex + 1}: Missing ${missing} scene(s)`);
-            // Add placeholder warnings for missing scenes
-            for (let i = correctedScenes.length; i < expectedSceneCount; i++) {
-                warnings.push({
-                    sceneNum: startScene + i,
-                    actual: 0,
-                    target: targetWords,
-                    tolerance: tolerance,
-                    diff: -targetWords
-                });
-            }
-        }
-
-        console.log(`✅ Batch ${batchIndex + 1} completed (${warnings.length} warnings)`);
-
-        return {
-            content: correctedScenes.join('\n\n'),
-            warnings: warnings
-        };
-
-    } catch (e: any) {
-        console.error("Gemini API Error:", e);
-        logError(2, `API Error at Batch ${batchIndex + 1}: ${e.message}`, 'ERROR', { batchIndex, error: e.message });
-
-        // GRACEFUL MODE: Return empty batch with warning instead of throwing
-        const expectedSceneCount = endScene - startScene + 1;
-        const warnings: SceneWarning[] = [];
-        for (let i = 0; i < expectedSceneCount; i++) {
-            warnings.push({
-                sceneNum: startScene + i,
-                actual: 0,
-                target: targetWords,
-                tolerance: tolerance,
-                diff: -targetWords
             });
-        }
 
-        return {
-            content: `[API Error in Batch ${batchIndex + 1}: ${e.message}]`,
-            warnings: warnings
-        };
+            // Store result for fallback
+            lastResult = {
+                content: correctedScenes.join('\n\n'),
+                warnings: warnings
+            };
+
+            // 3. Decision Logic
+            if (warnings.length === 0 && correctedScenes.length >= expectedSceneCount) {
+                console.log(`✅ Batch ${batchIndex + 1} Passed validation on Attempt ${attempts + 1}`);
+                return lastResult; // Success!
+            }
+
+            // 4. Generate Smart Feedback for Retry
+            feedback = `\n⚠️ CÁC LỖI CẦN SỬA NGAY (Lần thử ${attempts + 1}/${MAX_RETRIES}):\n`;
+
+            // Missing scenes feedback
+            if (correctedScenes.length < expectedSceneCount) {
+                feedback += `- THIẾU ${expectedSceneCount - correctedScenes.length} cảnh. Hãy tạo đủ từ Scene ${startScene} đến Scene ${endScene}.\n`;
+            }
+
+            // Word count feedback
+            warnings.forEach(w => {
+                if (w.actual === 0) {
+                    feedback += `- Scene ${w.sceneNum}: Thiếu mục "Lời dẫn". Hãy bổ sung ngay.\n`;
+                } else if (w.actual > maxWords) {
+                    feedback += `- Scene ${w.sceneNum}: ${w.actual} từ (QUÁ DÀI, target ${targetWords}). \n  👉 YÊU CẦU: Rút gọn ngay! Viết cô đọng, bỏ bớt từ thừa.\n`;
+                } else if (w.actual < minWords) {
+                    feedback += `- Scene ${w.sceneNum}: ${w.actual} từ (QUÁ NGẮN, target ${targetWords}). \n  👉 YÊU CẦU: Viết thêm chi tiết! Mô tả kỹ hơn hành động/cảm xúc.\n`;
+                }
+            });
+
+            console.warn(`⚠️ Batch ${batchIndex + 1} Attempt ${attempts + 1} Failed. Retrying with feedback...`);
+            attempts++;
+
+        } catch (e: any) {
+            console.error(`Gemini API Error (Attempt ${attempts + 1}):`, e);
+            logError(2, `API Error at Batch ${batchIndex + 1} Attempt ${attempts + 1}: ${e.message}`, 'ERROR', { batchIndex, error: e.message });
+            // On API error, try again if attempts allow
+            feedback = `\n⚠️ Lỗi hệ thống: ${e.message}. Hãy thử lại.\n`;
+            attempts++;
+        }
     }
+
+    // 5. Fallback: Graceful Accept after Max Retries
+    console.warn(`⚠️ Batch ${batchIndex + 1} Max Retries Exceeded. Accepting with ${lastResult.warnings.length} warnings.`);
+    return lastResult; // Return the best result we have (even with warnings)
 };
 
 // Bước 3: Tạo Kịch Bản Chi Tiết - CẬP NHẬT: Batching chính xác theo số cảnh
