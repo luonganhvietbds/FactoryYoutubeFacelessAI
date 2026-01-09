@@ -94,5 +94,14 @@ export interface BatchJob {
     // Phase: Graceful Accept Mode
     warnings?: SceneWarning[];
     qualityScore?: JobQualityScore;
+
+    // Phase: Hard Checkpoint & Resume
+    completedBatches?: number;    // Index of the last successfully completed batch (e.g. 5)
+    totalBatches?: number;        // Total batches planned (e.g. 10)
+    partialOutputs?: {            // Partially built content for current step
+        outline?: string;
+        script?: string;
+    };
+    lastUpdated?: number;         // Timestamp for persistence check
 }
 

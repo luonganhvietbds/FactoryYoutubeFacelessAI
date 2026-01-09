@@ -16,9 +16,12 @@ import {
   createMetadata
 } from '@/services/geminiService';
 import { apiKeyManager, ApiKeyInfo, KeyManagerState } from '@/lib/apiKeyManager';
+import { queuePersistence } from '@/lib/queuePersistence'; // NEW: Persistence
 import { Language, LANGUAGE_CONFIGS, getLanguageConfig } from '@/lib/languageConfig';
 
 import StepProgressBar from '@/components/StepProgressBar';
+import BatchResumeModal from '@/components/BatchResumeModal'; // NEW: Resume UI
+import QualityReport from '@/components/QualityReport'; // NEW: Quality Report
 import WandIcon from '@/components/icons/WandIcon';
 import LoadingSpinnerIcon from '@/components/icons/LoadingSpinnerIcon';
 import CopyIcon from '@/components/icons/CopyIcon';
@@ -97,6 +100,9 @@ export default function Home() {
   const [processedJobs, setProcessedJobs] = useState<BatchJob[]>([]);
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
 
+  // Resume State
+  const [resumeState, setResumeState] = useState<{ visible: boolean, age: string, jobCount: number } | null>(null);
+
   // Delays
   const [delayBetweenSteps, setDelayBetweenSteps] = useState(2000); // ms
   const [delayBetweenJobs, setDelayBetweenJobs] = useState(5000); // ms
@@ -157,6 +163,16 @@ export default function Home() {
         if (savedIds) setSelectedPromptIds({ ...defaults, ...JSON.parse(savedIds) });
         else setSelectedPromptIds(defaults);
       } catch { setSelectedPromptIds(defaults); }
+
+      // 5. Check for Resumable State
+      const hasState = await queuePersistence.hasSavedState();
+      if (hasState) {
+        const age = await queuePersistence.getStateAge();
+        const state = await queuePersistence.loadState();
+        if (state && age) {
+          setResumeState({ visible: true, age, jobCount: state.jobs.length });
+        }
+      }
     };
 
     initApp();
@@ -387,39 +403,103 @@ export default function Home() {
   const processBatchJob = async (job: BatchJob, jobIndex: number, totalJobs: number): Promise<BatchJobResult> => {
     const outputs: StepOutputs = {};
 
-    // Helper: Update job progress in queue
-    const updateJobProgress = (step: number, progress: string) => {
-      setBatchQueue(prev => prev.map(j =>
-        j.id === job.id ? { ...j, currentStep: step, stepProgress: progress } : j
-      ));
+    // Helper: Update job progress in queue and SAVE TO DB
+    const updateJobProgress = async (step: number, progress: string, partialData?: { completedBatches?: number, outline?: string, script?: string }) => {
+      setBatchQueue(prev => {
+        const newQueue = prev.map(j =>
+          j.id === job.id ? {
+            ...j,
+            currentStep: step,
+            stepProgress: progress,
+            ...(partialData?.completedBatches !== undefined ? { completedBatches: partialData.completedBatches } : {}),
+            ...(partialData?.outline || partialData?.script ? {
+              partialOutputs: {
+                ...j.partialOutputs,
+                ...(partialData.outline ? { outline: partialData.outline } : {}),
+                ...(partialData.script ? { script: partialData.script } : {})
+              }
+            } : {})
+          } : j
+        );
+        // Auto-save to IndexedDB (Fire and forget)
+        queuePersistence.saveState({
+          jobs: newQueue.filter(j => j.status === 'pending' || j.id === job.id), // Save pending and current
+          processedJobs: processedJobs,
+          config: {
+            sceneCount: batchSceneCount,
+            wordMin: batchTargetWords - batchWordTolerance,
+            wordMax: batchTargetWords + batchWordTolerance,
+            delaySeconds: batchDelaySeconds
+          },
+          lastUpdated: Date.now(),
+          version: '1.0'
+        }).catch(err => console.warn('Auto-save failed:', err));
+
+        return newQueue;
+      });
       setBatchProgress({ jobIndex, totalJobs, currentStep: step, message: `Job ${jobIndex}/${totalJobs} - ${progress}` });
     };
 
     try {
       // Collect all warnings across batches
-      const allWarnings: SceneWarning[] = [];
+      const allWarnings: SceneWarning[] = job.warnings || [];
 
-      // Step 2: Tạo Outline (Graceful Accept Mode)
+      // Step 2: Tạo Outline (Graceful Accept + Resume)
       const totalOutlineBatches = Math.ceil(batchSceneCount / 3);
+
+      // Resume logic verification
+      let startBatch = 0;
       let fullOutline = "";
-      for (let b = 0; b < totalOutlineBatches; b++) {
-        updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches}`);
+
+      // Only resume if we are successfully in Step 2 progress
+      if (job.currentStep === 2 && job.completedBatches && job.partialOutputs?.outline) {
+        startBatch = job.completedBatches;
+        fullOutline = job.partialOutputs.outline;
+        console.log(`🔄 Resuming Job ${job.id} Step 2 from Batch ${startBatch}`);
+      }
+
+      for (let b = startBatch; b < totalOutlineBatches; b++) {
+        await updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches}`, { completedBatches: b });
+
         const result = await createOutlineBatch(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchTargetWords, batchWordTolerance);
+
         if (result.content === "END_OF_OUTLINE") break;
         fullOutline += "\n" + result.content;
-        // Collect warnings from this batch
         allWarnings.push(...result.warnings);
+
+        // CHECKPOINT: Save partial outline
+        await updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches} (Saved)`, {
+          completedBatches: b + 1,
+          outline: fullOutline
+        });
       }
       outputs[2] = fullOutline.trim();
 
-      // Step 3: Viết Script
-      const totalScriptBatches = Math.ceil(batchSceneCount / 3); // Synchronized with SCENES_PER_BATCH = 3
+      // Step 3: Viết Script (Resume Logic)
+      const totalScriptBatches = Math.ceil(batchSceneCount / 3);
+      let scriptStartBatch = 0;
       let fullScript = "";
-      for (let b = 0; b < totalScriptBatches; b++) {
-        updateJobProgress(3, `Script ${b + 1}/${totalScriptBatches}`);
+
+      // Resume logic for Step 3
+      if (job.currentStep === 3 && job.completedBatches && job.partialOutputs?.script) {
+        scriptStartBatch = job.completedBatches;
+        fullScript = job.partialOutputs.script;
+        console.log(`🔄 Resuming Job ${job.id} Step 3 from Batch ${scriptStartBatch}`);
+      }
+
+      for (let b = scriptStartBatch; b < totalScriptBatches; b++) {
+        await updateJobProgress(3, `Script ${b + 1}/${totalScriptBatches}`, { completedBatches: b });
+
         const chunk = await createScriptBatch(apiKey, outputs[2], getPromptContentById(selectedPromptIds[3], promptsLibrary), fullScript, b, batchSceneCount);
+
         if (chunk.includes("END_OF_SCRIPT")) { fullScript += "\n" + chunk.replace("END_OF_SCRIPT", "").trim(); break; }
         fullScript += "\n" + chunk;
+
+        // CHECKPOINT: Save partial script
+        await updateJobProgress(3, `Script ${b + 1}/${totalScriptBatches} (Saved)`, {
+          completedBatches: b + 1,
+          script: fullScript
+        });
       }
       outputs[3] = fullScript.trim();
 
@@ -427,17 +507,17 @@ export default function Home() {
       const chunks = splitScriptIntoChunks(outputs[3]);
       const jsons = [];
       for (let i = 0; i < chunks.length; i++) {
-        updateJobProgress(4, `Prompts ${i + 1}/${chunks.length}`);
+        await updateJobProgress(4, `Prompts ${i + 1}/${chunks.length}`);
         jsons.push(await generatePromptsBatch(apiKey, chunks[i], getPromptContentById(selectedPromptIds[4], promptsLibrary)));
       }
       outputs[4] = mergePromptJsons(jsons);
 
       // Step 5: Tách Voice Over
-      updateJobProgress(5, 'Voice Over...');
+      await updateJobProgress(5, 'Voice Over...');
       outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), batchTargetWords - batchWordTolerance, batchTargetWords + batchWordTolerance);
 
       // Step 6: Tạo Metadata
-      updateJobProgress(6, 'Metadata...');
+      await updateJobProgress(6, 'Metadata...');
       outputs[6] = await createMetadata(apiKey, outputs[3], getPromptContentById(selectedPromptIds[6], promptsLibrary));
 
       // Calculate quality score from warnings
@@ -709,8 +789,44 @@ export default function Home() {
     );
   };
 
+  // --- RESUME LOGIC ---
+  const handleResumeSession = async () => {
+    const state = await queuePersistence.loadState();
+    if (state) {
+      // 1. Restore Jobs
+      setBatchQueue(state.jobs);
+      setProcessedJobs(state.processedJobs);
+
+      // 2. Restore Config
+      setBatchSceneCount(state.config.sceneCount);
+      // Derive target/tolerance from min/max (approximate)
+      const restoredTarget = Math.floor((state.config.wordMin + state.config.wordMax) / 2);
+      const restoredTolerance = Math.floor((state.config.wordMax - state.config.wordMin) / 2);
+      setBatchTargetWords(restoredTarget);
+      setBatchWordTolerance(restoredTolerance);
+      setBatchDelaySeconds(state.config.delaySeconds);
+
+      alert(`✅ Đã khôi phục ${state.jobs.length} jobs từ phiên trước!`);
+    }
+    setResumeState(null);
+  };
+
+  const handleDiscardSession = async () => {
+    await queuePersistence.clearState();
+    setResumeState(null);
+  };
+
   return (
     <div className="bg-slate-900 text-white min-h-screen font-sans">
+      {/* Resume Modal */}
+      {resumeState && (
+        <BatchResumeModal
+          age={resumeState.age}
+          jobCount={resumeState.jobCount}
+          onResume={handleResumeSession}
+          onDiscard={handleDiscardSession}
+        />
+      )}
       {showAdmin && <AdminPanel prompts={promptsLibrary} onUpdatePrompts={handleUpdatePrompts} onClose={() => setShowAdmin(false)} />}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -1036,8 +1152,8 @@ export default function Home() {
                             {/* Quality Score Badge */}
                             {job.status === 'completed' && job.qualityScore && (
                               <span className={`text-xs px-2 py-0.5 rounded ${job.qualityScore.score >= 90 ? 'bg-green-900/50 text-green-400' :
-                                  job.qualityScore.score >= 70 ? 'bg-amber-900/50 text-amber-400' :
-                                    'bg-red-900/50 text-red-400'
+                                job.qualityScore.score >= 70 ? 'bg-amber-900/50 text-amber-400' :
+                                  'bg-red-900/50 text-red-400'
                                 }`}>
                                 ⭐ {job.qualityScore.score}%
                               </span>
