@@ -89,7 +89,7 @@ export const createOutlineBatch = async (
     const MAX_ATTEMPTS = 5; // Tăng số lần retry cho large scripts
     let feedback = "";
     let lastValidationErrors: string[] = [];
-    const TOLERANCE = 5; // Graceful degradation: chấp nhận ±5 sau khi hết retry (tăng từ 2)
+    const TOLERANCE = 3; // Graceful degradation: chấp nhận ±3 sau khi hết retry
 
     while (attempts < MAX_ATTEMPTS) {
         const userPrompt = `
