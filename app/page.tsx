@@ -678,6 +678,17 @@ export default function Home() {
     if (job.outputs[6]) folder?.file('step6_metadata.txt', job.outputs[6]);
     folder?.file('input_original.txt', job.input);
 
+    // Generate Quality Report
+    const report = {
+      jobId: job.id,
+      timestamp: new Date().toISOString(),
+      status: job.status,
+      qualityScore: job.qualityScore,
+      warnings: job.warnings || [],
+      inputOriginal: job.input
+    };
+    folder?.file('quality_report.json', JSON.stringify(report, null, 2));
+
     const content = await zip.generateAsync({ type: 'blob' });
     saveAs(content, `${folderName}.zip`);
   };
