@@ -97,7 +97,7 @@ export const useScriptGenerator = (options: UseScriptGeneratorOptions) => {
             let result: string | undefined;
 
             if (stepId === 2) {
-                const totalBatches = Math.ceil(sceneCount / 5);
+                const totalBatches = Math.ceil(sceneCount / 3); // Sync with SCENES_PER_BATCH = 3
                 let fullOutline = "";
                 for (let b = 0; b < totalBatches; b++) {
                     setProgress({
@@ -105,9 +105,10 @@ export const useScriptGenerator = (options: UseScriptGeneratorOptions) => {
                         total: totalBatches,
                         message: `Creating Outline Batch ${b + 1}/${totalBatches}`
                     });
-                    const chunk = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount, wordCountMin, wordCountMax);
-                    if (chunk === "END_OF_OUTLINE") break;
-                    fullOutline += "\n" + chunk;
+                    // Graceful Accept Mode: warnings are ignored in single-step mode
+                    const batchResult = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount, wordCountMin, wordCountMax);
+                    if (batchResult.content === "END_OF_OUTLINE") break;
+                    fullOutline += "\n" + batchResult.content;
                 }
                 result = fullOutline.trim();
             } else if (stepId === 3) {

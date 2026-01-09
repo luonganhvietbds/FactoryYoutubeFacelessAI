@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { STEPS_CONFIG } from '@/lib/constants';
-import { StepOutputs, BatchJob, SystemPromptData, PromptPackManifest } from '@/lib/types';
+import { StepOutputs, BatchJob, SystemPromptData, PromptPackManifest, SceneWarning, JobQualityScore } from '@/lib/types';
 import { getPromptContentById } from '@/lib/prompt-utils';
 import { RegistryService } from '@/lib/prompt-registry/client-registry';
 import {
@@ -234,15 +234,14 @@ export default function Home() {
     const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
     const outputs: StepOutputs = {};
     try {
-      // Step
-      const totalOutlineBatches = Math.ceil(sceneCount / 3); // Synchronized with SCENES_PER_BATCH = 3 in geminiService.ts
+      // Step 2 (single-mode) - Note: warnings ignored in single mode for simplicity
+      const totalOutlineBatches = Math.ceil(sceneCount / 3);
       let fullOutline = "";
       for (let b = 0; b < totalOutlineBatches; b++) {
-        setProgress({ current: 2, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Outline Batch ${b + 1}/${totalOutlineBatches} (Strict Word Count)...` });
-        // Pass Min/Max
-        const chunk = await createOutlineBatch(apiKey, input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, sceneCount, wordCountMin, wordCountMax);
-        if (chunk === "END_OF_OUTLINE") break;
-        fullOutline += "\n" + chunk;
+        setProgress({ current: 2, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Outline Batch ${b + 1}/${totalOutlineBatches}...` });
+        const result = await createOutlineBatch(apiKey, input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, sceneCount, wordCountMin, wordCountMax);
+        if (result.content === "END_OF_OUTLINE") break;
+        fullOutline += "\n" + result.content;
       } outputs[2] = fullOutline.trim();
       await wait(delayBetweenSteps);
 
@@ -373,12 +372,19 @@ export default function Home() {
     }));
 
     setBatchQueue(prev => [...prev, ...newJobs]);
-    setBatchInputRaw(''); // Fixed: Use correct state setter
+    setBatchInputRaw('');
     alert(`✅ Đã thêm ${newJobs.length} kịch bản vào hàng chờ`);
   };
 
-  // 2. Process Single Job: Chạy Steps 2-6 cho 1 job
-  const processBatchJob = async (job: BatchJob, jobIndex: number, totalJobs: number): Promise<StepOutputs> => {
+  // Result type for batch job processing (Graceful Accept Mode)
+  interface BatchJobResult {
+    outputs: StepOutputs;
+    warnings: SceneWarning[];
+    qualityScore: JobQualityScore;
+  }
+
+  // 2. Process Single Job: Chạy Steps 2-6 cho 1 job (Graceful Accept Mode)
+  const processBatchJob = async (job: BatchJob, jobIndex: number, totalJobs: number): Promise<BatchJobResult> => {
     const outputs: StepOutputs = {};
 
     // Helper: Update job progress in queue
@@ -390,14 +396,19 @@ export default function Home() {
     };
 
     try {
-      // Step 2: Tạo Outline
-      const totalOutlineBatches = Math.ceil(batchSceneCount / 3); // Synchronized with SCENES_PER_BATCH = 3
+      // Collect all warnings across batches
+      const allWarnings: SceneWarning[] = [];
+
+      // Step 2: Tạo Outline (Graceful Accept Mode)
+      const totalOutlineBatches = Math.ceil(batchSceneCount / 3);
       let fullOutline = "";
       for (let b = 0; b < totalOutlineBatches; b++) {
         updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches}`);
-        const chunk = await createOutlineBatch(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchTargetWords, batchWordTolerance);
-        if (chunk === "END_OF_OUTLINE") break;
-        fullOutline += "\n" + chunk;
+        const result = await createOutlineBatch(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchTargetWords, batchWordTolerance);
+        if (result.content === "END_OF_OUTLINE") break;
+        fullOutline += "\n" + result.content;
+        // Collect warnings from this batch
+        allWarnings.push(...result.warnings);
       }
       outputs[2] = fullOutline.trim();
 
@@ -429,7 +440,16 @@ export default function Home() {
       updateJobProgress(6, 'Metadata...');
       outputs[6] = await createMetadata(apiKey, outputs[3], getPromptContentById(selectedPromptIds[6], promptsLibrary));
 
-      return outputs;
+      // Calculate quality score from warnings
+      const qualityScore: JobQualityScore = {
+        totalScenes: batchSceneCount,
+        withinTarget: batchSceneCount - allWarnings.length,
+        withinTolerance: 0, // All are either perfect or out of tolerance
+        outOfTolerance: allWarnings.length,
+        score: Math.round(((batchSceneCount - allWarnings.length) / batchSceneCount) * 100)
+      };
+
+      return { outputs, warnings: allWarnings, qualityScore };
     } catch (error: any) {
       throw new Error(`Lỗi khi xử lý Job ${jobIndex}: ${error.message}`);
     }
@@ -457,10 +477,16 @@ export default function Home() {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           setBatchQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'processing' } : j));
-          const outputs = await processBatchJob(job, jobIndex, totalJobs);
+          const result = await processBatchJob(job, jobIndex, totalJobs);
 
-          // Success
-          setProcessedJobs(prev => [...prev, { ...job, status: 'completed', outputs }]);
+          // Success - Extract outputs, warnings, qualityScore from result
+          setProcessedJobs(prev => [...prev, {
+            ...job,
+            status: 'completed',
+            outputs: result.outputs,
+            warnings: result.warnings,
+            qualityScore: result.qualityScore
+          }]);
           setBatchQueue(prev => prev.filter(j => j.id !== job.id));
           return; // Exit on success
 
@@ -568,17 +594,16 @@ export default function Home() {
         const input = getInputForStep(currentStep);
         if (!input) throw new Error("Thiếu input.");
         if (currentStep === 2) {
-          // FIX: Match service batch size (3 scenes per batch - synchronized with geminiService.ts)
+          // Single-mode Step 2 (warnings ignored for simplicity)
           const totalBatches = Math.ceil(sceneCount / 3);
           let fullOutline = "";
           for (let b = 0; b < totalBatches; b++) {
             setProgress({
-              current: b + 1, total: totalBatches, message: `Creating Outline Batch ${b + 1}/${totalBatches} (Validate Word Count)...`
+              current: b + 1, total: totalBatches, message: `Creating Outline Batch ${b + 1}/${totalBatches}...`
             });
-            // Pass Min/Max to validation logic
-            const chunk = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount, wordCountMin, wordCountMax);
-            if (chunk === "END_OF_OUTLINE") break;
-            fullOutline += "\n" + chunk;
+            const result = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount, wordCountMin, wordCountMax);
+            if (result.content === "END_OF_OUTLINE") break;
+            fullOutline += "\n" + result.content;
           }
           result = fullOutline.trim();
         } else if (currentStep === 3) {
@@ -1004,9 +1029,26 @@ export default function Home() {
                       }`}>
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <span className={job.status === 'completed' ? 'text-green-400' : 'text-red-400'}>
-                            {job.status === 'completed' ? '✅' : '❌'} Job {idx + 1}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={job.status === 'completed' ? 'text-green-400' : 'text-red-400'}>
+                              {job.status === 'completed' ? '✅' : '❌'} Job {idx + 1}
+                            </span>
+                            {/* Quality Score Badge */}
+                            {job.status === 'completed' && job.qualityScore && (
+                              <span className={`text-xs px-2 py-0.5 rounded ${job.qualityScore.score >= 90 ? 'bg-green-900/50 text-green-400' :
+                                  job.qualityScore.score >= 70 ? 'bg-amber-900/50 text-amber-400' :
+                                    'bg-red-900/50 text-red-400'
+                                }`}>
+                                ⭐ {job.qualityScore.score}%
+                              </span>
+                            )}
+                            {/* Warning count */}
+                            {job.warnings && job.warnings.length > 0 && (
+                              <span className="text-xs text-amber-400">
+                                ⚠️ {job.warnings.length} warnings
+                              </span>
+                            )}
+                          </div>
                           {/* Enhanced Error Display */}
                           {job.error && (
                             <div className="mt-2 p-3 bg-red-950/50 border border-red-800 rounded max-h-40 overflow-y-auto custom-scrollbar">
