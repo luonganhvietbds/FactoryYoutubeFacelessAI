@@ -6,56 +6,123 @@ import {
     parseScenes as parseSceneBlocks
 } from '@/lib/wordCounter';
 import { errorTracker, logError } from '@/lib/errorTracker';
+import { apiKeyManager } from '@/lib/apiKeyManager';
 
-// Hàm xử lý chung
-const callGemini = async (apiKey: string, systemPrompt: string, userMessage: string, useSearch: boolean = false) => {
-    if (!apiKey) {
-        throw new Error("Vui lòng nhập API Key của bạn.");
-    }
-    try {
-        const ai = new GoogleGenAI({ apiKey });
-        const modelId = 'gemini-3-pro-preview';
+// Config for retry behavior
+const RETRY_CONFIG = {
+    maxRetries: 3,
+    baseDelayMs: 1000,
+    maxDelayMs: 10000,
+    backoffMultiplier: 2
+};
 
-        const response = await ai.models.generateContent({
-            model: modelId,
-            contents: userMessage,
-            config: {
-                systemInstruction: systemPrompt,
-                ...(useSearch && { tools: [{ googleSearch: {} }] })
-            }
-        });
+/**
+ * Call Gemini API with automatic key rotation and retry
+ * Falls back to provided apiKey if pool is empty
+ */
+const callGeminiWithRetry = async (
+    providedApiKey: string,
+    systemPrompt: string,
+    userMessage: string,
+    useSearch: boolean = false
+): Promise<string> => {
+    let lastError: Error | null = null;
+    let attempts = 0;
 
-        let textOutput = (response.text ?? '').trim();
+    while (attempts < RETRY_CONFIG.maxRetries) {
+        // Try to get key from pool first, fallback to provided key
+        const currentKey = apiKeyManager.getNextKey() || providedApiKey;
 
-        // Xử lý Grounding
-        if (useSearch && response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
-            const chunks = response.candidates[0].groundingMetadata.groundingChunks;
-            let sourcesList = "\n\n---\n**Nguồn tham khảo (Sources):**\n";
-            let hasSources = false;
+        if (!currentKey) {
+            throw new Error("Không có API Key khả dụng. Vui lòng thêm key vào pool hoặc nhập trực tiếp.");
+        }
 
-            chunks.forEach((chunk: any, index: number) => {
-                if (chunk.web?.uri && chunk.web?.title) {
-                    sourcesList += `${index + 1}. [${chunk.web.title}](${chunk.web.uri})\n`;
-                    hasSources = true;
+        try {
+            const ai = new GoogleGenAI({ apiKey: currentKey });
+            const modelId = 'gemini-2.5-flash';
+
+            const response = await ai.models.generateContent({
+                model: modelId,
+                contents: userMessage,
+                config: {
+                    systemInstruction: systemPrompt,
+                    ...(useSearch && { tools: [{ googleSearch: {} }] })
                 }
             });
 
-            if (hasSources) {
-                textOutput += sourcesList;
-            }
-        }
-        return textOutput;
+            let textOutput = (response.text ?? '').trim();
 
-    } catch (error) {
-        console.error("Gemini API call failed:", error);
-        if (error instanceof Error) {
-            if (error.message.includes('API key not valid')) {
-                throw new Error("API Key không hợp lệ. Vui lòng kiểm tra lại.");
+            // Handle Grounding
+            if (useSearch && response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+                const chunks = response.candidates[0].groundingMetadata.groundingChunks;
+                let sourcesList = "\n\n---\n**Nguồn tham khảo (Sources):**\n";
+                let hasSources = false;
+
+                chunks.forEach((chunk: any, index: number) => {
+                    if (chunk.web?.uri && chunk.web?.title) {
+                        sourcesList += `${index + 1}. [${chunk.web.title}](${chunk.web.uri})\n`;
+                        hasSources = true;
+                    }
+                });
+
+                if (hasSources) {
+                    textOutput += sourcesList;
+                }
             }
-            throw new Error(`Lỗi từ Gemini API: ${error.message}`);
+
+            // Success - report to key manager
+            apiKeyManager.reportSuccess(currentKey);
+            return textOutput;
+
+        } catch (error: any) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            const errorMessage = lastError.message;
+
+            console.warn(`API call failed (attempt ${attempts + 1}):`, errorMessage);
+
+            // Report failure to key manager
+            apiKeyManager.reportFailure(currentKey, errorMessage);
+
+            // Check if it's a rate limit error
+            const isRateLimit = errorMessage.includes('429') ||
+                errorMessage.toLowerCase().includes('rate limit') ||
+                errorMessage.toLowerCase().includes('quota');
+
+            // Check if it's an invalid key error
+            const isInvalidKey = errorMessage.includes('401') ||
+                errorMessage.includes('403') ||
+                errorMessage.toLowerCase().includes('api key not valid');
+
+            if (isRateLimit) {
+                // Rate limit - try next key immediately
+                logError(0, `Rate limit hit, rotating key`, 'WARNING', { key: currentKey.slice(0, 8) });
+                attempts++;
+                continue;
+            } else if (isInvalidKey) {
+                // Invalid key - mark dead and try next
+                logError(0, `Invalid key detected, removing from rotation`, 'ERROR', { key: currentKey.slice(0, 8) });
+                attempts++;
+                continue;
+            } else {
+                // Other error - exponential backoff
+                const delay = Math.min(
+                    RETRY_CONFIG.baseDelayMs * Math.pow(RETRY_CONFIG.backoffMultiplier, attempts),
+                    RETRY_CONFIG.maxDelayMs
+                );
+                logError(0, `API error, retrying in ${delay}ms`, 'WARNING', { error: errorMessage });
+                await new Promise(resolve => setTimeout(resolve, delay));
+                attempts++;
+            }
         }
-        throw new Error("Lỗi không xác định từ Gemini API.");
     }
+
+    // All retries exhausted
+    throw lastError || new Error("Đã thử hết tất cả API keys nhưng vẫn thất bại.");
+};
+
+// Legacy function for backward compatibility (uses new retry logic internally)
+const callGemini = async (apiKey: string, systemPrompt: string, userMessage: string, useSearch: boolean = false) => {
+    return callGeminiWithRetry(apiKey, systemPrompt, userMessage, useSearch);
 };
 
 // --- SERVICE CHO CÁC BƯỚC ---
