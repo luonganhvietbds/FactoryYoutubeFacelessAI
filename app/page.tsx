@@ -989,12 +989,19 @@ export default function Home() {
                       ? 'bg-green-900/20 border-green-600'
                       : 'bg-red-900/20 border-red-600'
                       }`}>
-                      <div className="flex justify-between items-center">
+                      <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <span className={job.status === 'completed' ? 'text-green-400' : 'text-red-400'}>
                             {job.status === 'completed' ? '✅' : '❌'} Job {idx + 1}
                           </span>
-                          {job.error && <p className="text-xs text-red-300 mt-1">{job.error}</p>}
+                          {/* Enhanced Error Display */}
+                          {job.error && (
+                            <div className="mt-2 p-3 bg-red-950/50 border border-red-800 rounded max-h-40 overflow-y-auto custom-scrollbar">
+                              <pre className="text-red-300 text-xs whitespace-pre-wrap font-mono leading-relaxed">
+                                {job.error}
+                              </pre>
+                            </div>
+                          )}
                         </div>
 
                         {job.status === 'completed' && (

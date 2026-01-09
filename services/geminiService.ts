@@ -5,6 +5,7 @@ import {
     extractVoiceoverContent,
     parseScenes as parseSceneBlocks
 } from '@/lib/wordCounter';
+import { errorTracker, logError } from '@/lib/errorTracker';
 
 // Hàm xử lý chung
 const callGemini = async (apiKey: string, systemPrompt: string, userMessage: string, useSearch: boolean = false) => {
@@ -87,7 +88,8 @@ export const createOutlineBatch = async (
     let attempts = 0;
     const MAX_ATTEMPTS = 5; // Tăng số lần retry cho large scripts
     let feedback = "";
-    const TOLERANCE = 2; // Graceful degradation: chấp nhận ±2 sau khi hết retry
+    let lastValidationErrors: string[] = [];
+    const TOLERANCE = 5; // Graceful degradation: chấp nhận ±5 sau khi hết retry (tăng từ 2)
 
     while (attempts < MAX_ATTEMPTS) {
         const userPrompt = `
@@ -196,7 +198,18 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
                 return correctedScenes.join('\n\n');
             } else {
                 console.warn(`⚠️ Attempt ${attempts + 1} failed:`, validationErrors);
+                lastValidationErrors = validationErrors;
                 feedback = validationErrors.join('\n');
+
+                // Log to error tracker
+                logError(2, `Batch ${batchIndex + 1} (Scene ${startScene}-${endScene}) attempt ${attempts + 1}/${MAX_ATTEMPTS} failed`, 'WARNING', {
+                    batchIndex,
+                    sceneRange: `${startScene}-${endScene}`,
+                    validationErrors,
+                    minWords,
+                    maxWords
+                });
+
                 attempts++;
 
                 // Graceful degradation: Sau khi thử nhiều lần, chấp nhận với tolerance
@@ -224,13 +237,37 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
                     }
                 }
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error("Gemini API Error:", e);
+            logError(2, `API Error at Batch ${batchIndex + 1}: ${e.message}`, 'ERROR', { batchIndex, error: e.message });
+            lastValidationErrors.push(`API Error: ${e.message}`);
             attempts++;
         }
     }
 
-    throw new Error(`❌ Failed to generate valid scenes ${startScene}-${endScene} after ${MAX_ATTEMPTS} attempts.\nLast errors:\n${feedback}`);
+    // Enhanced error message with full context
+    const errorDetails = [
+        `📍 STEP: 2 - Tạo Outline`,
+        `📦 BATCH: ${batchIndex + 1} (Scene ${startScene}-${endScene})`,
+        `🔄 SỐ LẦN THỬ: ${MAX_ATTEMPTS}`,
+        `⚙️ YÊU CẦU: ${minWords}-${maxWords} words/scene`,
+        `📊 TOLERANCE: ±${TOLERANCE} words`,
+        ``,
+        `❓ LỖI VALIDATION CHI TIẾT:`,
+        ...lastValidationErrors.map((e, i) => `   ${i + 1}. ${e}`)
+    ].join('\n');
+
+    logError(2, `Failed to generate scenes ${startScene}-${endScene}`, 'CRITICAL', {
+        batchIndex,
+        sceneRange: `${startScene}-${endScene}`,
+        attempts: MAX_ATTEMPTS,
+        minWords,
+        maxWords,
+        tolerance: TOLERANCE,
+        lastErrors: lastValidationErrors
+    });
+
+    throw new Error(`❌ STEP 2 FAILED\n${errorDetails}`);
 };
 
 // Bước 3: Tạo Kịch Bản Chi Tiết - CẬP NHẬT: Batching chính xác theo số cảnh
