@@ -132,7 +132,7 @@ export const getNewsAndEvents = async (apiKey: string, keyword: string, systemPr
     return callGemini(apiKey, systemPrompt, `Chủ đề/Từ khóa cần tìm kiếm: "${keyword}"`, true);
 };
 
-// Bước 2: Tạo Dàn Ý - V3: Post-Correction Engine + Deterministic Word Counter
+// Bước 2: Tạo Dàn Ý - V4: Target ± Tolerance (Simplified UX)
 
 export const createOutlineBatch = async (
     apiKey: string,
@@ -141,10 +141,14 @@ export const createOutlineBatch = async (
     currentOutline: string,
     batchIndex: number,
     sceneCount: number,
-    minWords: number,
-    maxWords: number
+    targetWords: number,  // NEW: Target word count (e.g., 20)
+    tolerance: number     // NEW: Tolerance (e.g., 3 means ±3, accepting 17-23)
 ): Promise<string> => {
-    // Giảm batch size để AI dễ đạt word count chính xác hơn cho large scripts (100-300 scenes)
+    // Calculate min/max from target ± tolerance
+    const minWords = targetWords - tolerance;
+    const maxWords = targetWords + tolerance;
+
+    // Batch size for processing
     const SCENES_PER_BATCH = 3;
     const startScene = batchIndex * SCENES_PER_BATCH + 1;
     let endScene = startScene + SCENES_PER_BATCH - 1;
@@ -153,10 +157,9 @@ export const createOutlineBatch = async (
     if (startScene > sceneCount) return "END_OF_OUTLINE";
 
     let attempts = 0;
-    const MAX_ATTEMPTS = 5; // Tăng số lần retry cho large scripts
+    const MAX_ATTEMPTS = 5;
     let feedback = "";
     let lastValidationErrors: string[] = [];
-    const TOLERANCE = 3; // Graceful degradation: chấp nhận ±3 sau khi hết retry
 
     while (attempts < MAX_ATTEMPTS) {
         const userPrompt = `
@@ -181,14 +184,14 @@ KHÔNG ĐƯỢC gộp từ ghép thành 1 đơn vị (ví dụ: "nhà quản lý
 
 YÊU CẦU VỀ LỜI DẪN (VOICE OVER):
 1. Mỗi cảnh PHẢI có mục "**Lời dẫn:**".
-2. Độ dài PHẢI trong khoảng **${minWords} - ${maxWords} âm tiết** (tính theo QUY TẮC trên).
+2. Độ dài MỤC TIÊU: **${targetWords} từ** (chấp nhận từ ${minWords} đến ${maxWords} từ).
 3. Cuối mỗi Lời dẫn, ghi số từ thực tế. Ví dụ: (18 từ).
 
 ${feedback ? `
 ⚠️ LƯU Ý QUAN TRỌNG (LẦN THỬ ${attempts + 1}/${MAX_ATTEMPTS}):
 Lần sinh trước bị TỪ CHỐI vì:
 ${feedback}
-HÃY SỬA LẠI NGAY. Nếu quá dài: CẮT BỚT. Nếu quá ngắn: BỔ SUNG.
+HÃY SỬA LẠI NGAY. Mục tiêu: ${targetWords} từ (±${tolerance}).
 ` : ""}
 
 QUY TẮC FORMAT:
@@ -289,7 +292,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
                             const actual = parseInt(match[2]);
                             const min = parseInt(match[3]);
                             const max = parseInt(match[4]);
-                            const isWithinTolerance = actual >= (min - TOLERANCE) && actual <= (max + TOLERANCE);
+                            const isWithinTolerance = actual >= (min - tolerance) && actual <= (max + tolerance);
                             if (!isWithinTolerance) {
                                 toleranceErrors.push(err);
                             }
@@ -299,7 +302,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
                     });
 
                     if (withinTolerance && validSceneCount >= expectedSceneCount) {
-                        console.warn(`⚠️ Batch ${batchIndex + 1} accepted with tolerance (±${TOLERANCE} words)`);
+                        console.warn(`⚠️ Batch ${batchIndex + 1} accepted with tolerance (±${tolerance} words)`);
                         return correctedScenes.join('\n\n');
                     }
                 }
@@ -318,7 +321,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
         `📦 BATCH: ${batchIndex + 1} (Scene ${startScene}-${endScene})`,
         `🔄 SỐ LẦN THỬ: ${MAX_ATTEMPTS}`,
         `⚙️ YÊU CẦU: ${minWords}-${maxWords} words/scene`,
-        `📊 TOLERANCE: ±${TOLERANCE} words`,
+        `📊 TOLERANCE: ±${tolerance} words`,
         ``,
         `❓ LỖI VALIDATION CHI TIẾT:`,
         ...lastValidationErrors.map((e, i) => `   ${i + 1}. ${e}`)
@@ -330,7 +333,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
         attempts: MAX_ATTEMPTS,
         minWords,
         maxWords,
-        tolerance: TOLERANCE,
+        tolerance: tolerance,
         lastErrors: lastValidationErrors
     });
 

@@ -103,8 +103,8 @@ export default function Home() {
 
   // ========== ISOLATED BATCH MODE STATE (New - Completely Separate) ==========
   const [batchSceneCount, setBatchSceneCount] = useState<number>(45);
-  const [batchWordMin, setBatchWordMin] = useState<number>(18);
-  const [batchWordMax, setBatchWordMax] = useState<number>(22);
+  const [batchTargetWords, setBatchTargetWords] = useState<number>(20);  // NEW: Target word count
+  const [batchWordTolerance, setBatchWordTolerance] = useState<number>(3); // NEW: Tolerance ±
   const [batchDelaySeconds, setBatchDelaySeconds] = useState<number>(5);
   const [batchProgress, setBatchProgress] = useState<{
     jobIndex: number;
@@ -395,7 +395,7 @@ export default function Home() {
       let fullOutline = "";
       for (let b = 0; b < totalOutlineBatches; b++) {
         updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches}`);
-        const chunk = await createOutlineBatch(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchWordMin, batchWordMax);
+        const chunk = await createOutlineBatch(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchTargetWords, batchWordTolerance);
         if (chunk === "END_OF_OUTLINE") break;
         fullOutline += "\n" + chunk;
       }
@@ -423,7 +423,7 @@ export default function Home() {
 
       // Step 5: Tách Voice Over
       updateJobProgress(5, 'Voice Over...');
-      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), batchWordMin, batchWordMax);
+      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), batchTargetWords - batchWordTolerance, batchTargetWords + batchWordTolerance);
 
       // Step 6: Tạo Metadata
       updateJobProgress(6, 'Metadata...');
@@ -781,29 +781,42 @@ export default function Home() {
                   />
                 </div>
 
-                {/* Word Count Min/Max */}
-                <div className="grid grid-cols-2 gap-3">
+                {/* Word Count Target + Tolerance (Simplified UX) */}
+                <div className="space-y-3">
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Min Words</label>
+                    <label className="text-xs font-bold text-slate-400 uppercase flex justify-between mb-2">
+                      <span>🎯 Target Words</span>
+                      <span className="text-amber-400">{batchTargetWords} từ</span>
+                    </label>
                     <input
-                      type="number"
-                      min="5"
-                      max="100"
-                      value={batchWordMin}
-                      onChange={e => setBatchWordMin(Number(e.target.value))}
-                      className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm"
+                      type="range"
+                      min="10"
+                      max="40"
+                      value={batchTargetWords}
+                      onChange={e => setBatchTargetWords(Number(e.target.value))}
+                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Max Words</label>
+                    <label className="text-xs font-bold text-slate-400 uppercase flex justify-between mb-2">
+                      <span>📊 Tolerance</span>
+                      <span className="text-sky-400">±{batchWordTolerance}</span>
+                    </label>
                     <input
-                      type="number"
-                      min="10"
-                      max="200"
-                      value={batchWordMax}
-                      onChange={e => setBatchWordMax(Number(e.target.value))}
-                      className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm"
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={batchWordTolerance}
+                      onChange={e => setBatchWordTolerance(Number(e.target.value))}
+                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
                     />
+                  </div>
+                  {/* Preview Range */}
+                  <div className="bg-slate-900 p-2 rounded flex justify-center items-center gap-2">
+                    <span className="text-xs text-slate-500">Chấp nhận:</span>
+                    <span className="text-sm font-bold text-green-400">
+                      {batchTargetWords - batchWordTolerance} - {batchTargetWords + batchWordTolerance} từ
+                    </span>
                   </div>
                 </div>
 
