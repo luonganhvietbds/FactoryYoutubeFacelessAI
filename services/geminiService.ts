@@ -76,7 +76,8 @@ export const createOutlineBatch = async (
     minWords: number,
     maxWords: number
 ): Promise<string> => {
-    const SCENES_PER_BATCH = 5;
+    // Giảm batch size để AI dễ đạt word count chính xác hơn cho large scripts (100-300 scenes)
+    const SCENES_PER_BATCH = 3;
     const startScene = batchIndex * SCENES_PER_BATCH + 1;
     let endScene = startScene + SCENES_PER_BATCH - 1;
     if (endScene > sceneCount) endScene = sceneCount;
@@ -84,16 +85,17 @@ export const createOutlineBatch = async (
     if (startScene > sceneCount) return "END_OF_OUTLINE";
 
     let attempts = 0;
-    const MAX_ATTEMPTS = 3;
+    const MAX_ATTEMPTS = 5; // Tăng số lần retry cho large scripts
     let feedback = "";
+    const TOLERANCE = 2; // Graceful degradation: chấp nhận ±2 sau khi hết retry
 
     while (attempts < MAX_ATTEMPTS) {
         const userPrompt = `
 Thông tin đầu vào (Tin tức/Sự kiện):
 ${newsData}
 
-Dàn ý đã có (Context):
-${currentOutline.slice(-1000)}
+Dàn ý đã có (Context - tăng gấp đôi để giữ continuity):
+${currentOutline.slice(-2000)}
 
 NHIỆM VỤ HIỆN TẠI (Batch scenes ${startScene} -> ${endScene}):
 Hãy lập tiếp dàn ý chi tiết cho các cảnh từ **Scene ${startScene}** đến **Scene ${endScene}**.
@@ -196,6 +198,31 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
                 console.warn(`⚠️ Attempt ${attempts + 1} failed:`, validationErrors);
                 feedback = validationErrors.join('\n');
                 attempts++;
+
+                // Graceful degradation: Sau khi thử nhiều lần, chấp nhận với tolerance
+                if (attempts >= MAX_ATTEMPTS) {
+                    // Kiểm tra xem lỗi có trong tolerance không
+                    const toleranceErrors: string[] = [];
+                    const withinTolerance = validationErrors.every(err => {
+                        const match = err.match(/Scene (\d+): (\d+) từ \(cần (\d+)-(\d+)\)/);
+                        if (match) {
+                            const actual = parseInt(match[2]);
+                            const min = parseInt(match[3]);
+                            const max = parseInt(match[4]);
+                            const isWithinTolerance = actual >= (min - TOLERANCE) && actual <= (max + TOLERANCE);
+                            if (!isWithinTolerance) {
+                                toleranceErrors.push(err);
+                            }
+                            return isWithinTolerance;
+                        }
+                        return false; // Missing "Lời dẫn" không thể chấp nhận
+                    });
+
+                    if (withinTolerance && validSceneCount >= expectedSceneCount) {
+                        console.warn(`⚠️ Batch ${batchIndex + 1} accepted with tolerance (±${TOLERANCE} words)`);
+                        return correctedScenes.join('\n\n');
+                    }
+                }
             }
         } catch (e) {
             console.error("Gemini API Error:", e);
@@ -215,8 +242,8 @@ export const createScriptBatch = async (
     batchIndex: number,
     sceneCount: number // Tổng số cảnh yêu cầu
 ): Promise<string> => {
-    // Mỗi batch xử lý 5 cảnh
-    const SCENES_PER_BATCH = 5;
+    // Đồng bộ batch size với Step 2 để consistency
+    const SCENES_PER_BATCH = 3;
     const startScene = batchIndex * SCENES_PER_BATCH + 1;
     let endScene = startScene + SCENES_PER_BATCH - 1;
 
@@ -284,7 +311,7 @@ YÊU CẦU ĐẶC BIỆT VỀ ĐỘ DÀI:
 `);
 };
 
-// Helper: Cắt kịch bản thành các chunk (mỗi chunk khoảng 5 scenes) để xử lý Prompt/Json
+// Helper: Cắt kịch bản thành các chunk (mỗi chunk 3 scenes - đồng bộ với Step 2/3)
 export const splitScriptIntoChunks = (fullScript: string): string[] => {
     const sceneRegex = /(?=\n\s*(?:Scene|Cảnh)\s+\d+[:.])/i;
     const parts = fullScript.split(sceneRegex).filter(p => p.trim().length > 0);
@@ -296,8 +323,8 @@ export const splitScriptIntoChunks = (fullScript: string): string[] => {
     for (const part of parts) {
         currentChunk += part;
         count++;
-        // Gom 5 scenes vào 1 chunk
-        if (count >= 5) {
+        // Đồng bộ với batch size của Step 2/3 (3 scenes)
+        if (count >= 3) {
             chunks.push(currentChunk);
             currentChunk = "";
             count = 0;

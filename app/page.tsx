@@ -235,7 +235,7 @@ export default function Home() {
     const outputs: StepOutputs = {};
     try {
       // Step
-      const totalOutlineBatches = Math.ceil(sceneCount / 5); // Batch size reduced to 5 in Service
+      const totalOutlineBatches = Math.ceil(sceneCount / 3); // Synchronized with SCENES_PER_BATCH = 3 in geminiService.ts
       let fullOutline = "";
       for (let b = 0; b < totalOutlineBatches; b++) {
         setProgress({ current: 2, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Outline Batch ${b + 1}/${totalOutlineBatches} (Strict Word Count)...` });
@@ -247,7 +247,7 @@ export default function Home() {
       await wait(delayBetweenSteps);
 
       // Step 3
-      const totalBatches = Math.ceil(sceneCount / 5);
+      const totalBatches = Math.ceil(sceneCount / 3); // Synchronized with SCENES_PER_BATCH = 3
       let fullScript = "";
       for (let b = 0; b < totalBatches; b++) {
         setProgress({ current: 3, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Viết Script Batch ${b + 1}/${totalBatches}...` });
@@ -391,7 +391,7 @@ export default function Home() {
 
     try {
       // Step 2: Tạo Outline
-      const totalOutlineBatches = Math.ceil(batchSceneCount / 5);
+      const totalOutlineBatches = Math.ceil(batchSceneCount / 3); // Synchronized with SCENES_PER_BATCH = 3
       let fullOutline = "";
       for (let b = 0; b < totalOutlineBatches; b++) {
         updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches}`);
@@ -402,7 +402,7 @@ export default function Home() {
       outputs[2] = fullOutline.trim();
 
       // Step 3: Viết Script
-      const totalScriptBatches = Math.ceil(batchSceneCount / 5);
+      const totalScriptBatches = Math.ceil(batchSceneCount / 3); // Synchronized with SCENES_PER_BATCH = 3
       let fullScript = "";
       for (let b = 0; b < totalScriptBatches; b++) {
         updateJobProgress(3, `Script ${b + 1}/${totalScriptBatches}`);
@@ -568,8 +568,8 @@ export default function Home() {
         const input = getInputForStep(currentStep);
         if (!input) throw new Error("Thiếu input.");
         if (currentStep === 2) {
-          // FIX: Match service batch size (5 scenes per batch)
-          const totalBatches = Math.ceil(sceneCount / 5);
+          // FIX: Match service batch size (3 scenes per batch - synchronized with geminiService.ts)
+          const totalBatches = Math.ceil(sceneCount / 3);
           let fullOutline = "";
           for (let b = 0; b < totalBatches; b++) {
             setProgress({
@@ -582,7 +582,7 @@ export default function Home() {
           }
           result = fullOutline.trim();
         } else if (currentStep === 3) {
-          const totalBatches = Math.ceil(sceneCount / 5);
+          const totalBatches = Math.ceil(sceneCount / 3); // Synchronized with SCENES_PER_BATCH = 3
           let fullScript = "";
           for (let i = 0; i < totalBatches; i++) {
             setProgress({ current: i + 1, total: totalBatches, message: `Batch ${i + 1}/${totalBatches}` });
@@ -774,7 +774,7 @@ export default function Home() {
                   <input
                     type="range"
                     min="5"
-                    max="200"
+                    max="300"
                     value={batchSceneCount}
                     onChange={e => setBatchSceneCount(Number(e.target.value))}
                     className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
@@ -1035,8 +1035,8 @@ export default function Home() {
                           <span>Scene Count (Số cảnh)</span>
                           <span className="text-sky-400">{sceneCount} scenes</span>
                         </label>
-                        <input type="range" min="5" max="100" value={sceneCount} onChange={e => setSceneCount(Number(e.target.value))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer mt-2" />
-                        <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1"><span>Min: 5</span><span>Max: 100</span></div>
+                        <input type="range" min="5" max="300" value={sceneCount} onChange={e => setSceneCount(Number(e.target.value))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer mt-2" />
+                        <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1"><span>Min: 5</span><span>Max: 300</span></div>
                       </div>
 
                       <div>
