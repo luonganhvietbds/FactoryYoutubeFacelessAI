@@ -461,7 +461,7 @@ export default function Home() {
       for (let b = startBatch; b < totalOutlineBatches; b++) {
         await updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches}`, { completedBatches: b });
 
-        const result = await createOutlineBatch(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchTargetWords, batchWordTolerance);
+        const result = await createOutlineBatch(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchTargetWords, batchWordTolerance, (r, a) => updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches} (Retry ${a}: ${r})`));
 
         if (result.content === "END_OF_OUTLINE") break;
         fullOutline += "\n" + result.content;
@@ -490,7 +490,7 @@ export default function Home() {
       for (let b = scriptStartBatch; b < totalScriptBatches; b++) {
         await updateJobProgress(3, `Script ${b + 1}/${totalScriptBatches}`, { completedBatches: b });
 
-        const chunk = await createScriptBatch(apiKey, outputs[2], getPromptContentById(selectedPromptIds[3], promptsLibrary), fullScript, b, batchSceneCount);
+        const chunk = await createScriptBatch(apiKey, outputs[2], getPromptContentById(selectedPromptIds[3], promptsLibrary), fullScript, b, batchSceneCount, (r, a) => updateJobProgress(3, `Script ${b + 1}/${totalScriptBatches} (Retry ${a}: ${r})`));
 
         if (chunk.includes("END_OF_SCRIPT")) { fullScript += "\n" + chunk.replace("END_OF_SCRIPT", "").trim(); break; }
         fullScript += "\n" + chunk;
@@ -508,17 +508,17 @@ export default function Home() {
       const jsons = [];
       for (let i = 0; i < chunks.length; i++) {
         await updateJobProgress(4, `Prompts ${i + 1}/${chunks.length}`);
-        jsons.push(await generatePromptsBatch(apiKey, chunks[i], getPromptContentById(selectedPromptIds[4], promptsLibrary)));
+        jsons.push(await generatePromptsBatch(apiKey, chunks[i], getPromptContentById(selectedPromptIds[4], promptsLibrary), (r, a) => updateJobProgress(4, `Prompts ${i + 1}/${chunks.length} (Retry ${a}: ${r})`)));
       }
       outputs[4] = mergePromptJsons(jsons);
 
       // Step 5: Tách Voice Over
       await updateJobProgress(5, 'Voice Over...');
-      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), batchTargetWords - batchWordTolerance, batchTargetWords + batchWordTolerance);
+      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), batchTargetWords - batchWordTolerance, batchTargetWords + batchWordTolerance, (r, a) => updateJobProgress(5, `Voice Over (Retry ${a}: ${r})`));
 
       // Step 6: Tạo Metadata
       await updateJobProgress(6, 'Metadata...');
-      outputs[6] = await createMetadata(apiKey, outputs[3], getPromptContentById(selectedPromptIds[6], promptsLibrary));
+      outputs[6] = await createMetadata(apiKey, outputs[3], getPromptContentById(selectedPromptIds[6], promptsLibrary), (r, a) => updateJobProgress(6, `Metadata (Retry ${a}: ${r})`));
 
       // Calculate quality score from warnings
       const qualityScore: JobQualityScore = {
@@ -568,7 +568,7 @@ export default function Home() {
             qualityScore: result.qualityScore
           }]);
           setBatchQueue(prev => prev.filter(j => j.id !== job.id));
-          return; // Exit on success
+          return true; // Exit on success
 
         } catch (error: any) {
           lastError = error;
@@ -590,6 +590,7 @@ export default function Home() {
         error: `Failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'} `
       }]);
       setBatchQueue(prev => prev.filter(j => j.id !== job.id));
+      return false; // Failed
     };
 
     // Helper: Split array into chunks
@@ -604,6 +605,7 @@ export default function Home() {
     // Process in parallel chunks
     const chunks = chunkArray(queueCopy, maxConcurrent);
     let processedCount = 0;
+    let consecutiveChunkFailures = 0;
 
     for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
       const chunk = chunks[chunkIdx];
@@ -617,9 +619,29 @@ export default function Home() {
       });
 
       // Run chunk in parallel
-      await Promise.all(
+      const chunkResults = await Promise.all(
         chunk.map((job, idx) => processJobWithRetry(job, processedCount + idx + 1))
       );
+
+      // Circuit Breaker: If all jobs in chunk failed, increment counter
+      if (chunkResults.every(r => r === false)) {
+        consecutiveChunkFailures++;
+      } else {
+        consecutiveChunkFailures = 0;
+      }
+
+      // If 2 consecutive chunks ALL failed -> Pause/Stop
+      if (consecutiveChunkFailures >= 2) {
+        setIsProcessingBatch(false);
+        setBatchProgress({
+          jobIndex: processedCount,
+          totalJobs,
+          currentStep: 0,
+          message: "⚠️ TẠM DỪNG: Quá nhiều lỗi liên tiếp (Có thể do API Limit)."
+        });
+        alert("⚠️ Hệ thống tạm dừng do lỗi liên tiếp (Khả năng cao do API Rate Limit). Đã lưu tiến độ. Vui lòng thử lại sau!");
+        break;
+      }
 
       processedCount += chunk.length;
 

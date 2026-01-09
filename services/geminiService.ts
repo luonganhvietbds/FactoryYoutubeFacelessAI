@@ -24,7 +24,8 @@ const callGeminiWithRetry = async (
     providedApiKey: string,
     systemPrompt: string,
     userMessage: string,
-    useSearch: boolean = false
+    useSearch: boolean = false,
+    onRetry?: (reason: string, attempt: number) => void
 ): Promise<string> => {
     let lastError: Error | null = null;
     let attempts = 0;
@@ -93,6 +94,12 @@ const callGeminiWithRetry = async (
                 errorMessage.includes('403') ||
                 errorMessage.toLowerCase().includes('api key not valid');
 
+            // NEW: Notify UI about retry
+            if (onRetry) {
+                const reason = isRateLimit ? "Rate Limit (429)" : isInvalidKey ? "Key Invalid" : errorMessage.substring(0, 30);
+                onRetry(reason, attempts + 1);
+            }
+
             if (isRateLimit) {
                 // Rate limit - try next key immediately
                 logError(0, `Rate limit hit, rotating key`, 'WARNING', { key: currentKey.slice(0, 8) });
@@ -121,15 +128,22 @@ const callGeminiWithRetry = async (
 };
 
 // Legacy function for backward compatibility (uses new retry logic internally)
-const callGemini = async (apiKey: string, systemPrompt: string, userMessage: string, useSearch: boolean = false) => {
-    return callGeminiWithRetry(apiKey, systemPrompt, userMessage, useSearch);
+// Legacy function for backward compatibility
+const callGemini = async (
+    apiKey: string,
+    systemPrompt: string,
+    userMessage: string,
+    useSearch: boolean = false,
+    onRetry?: (reason: string, attempt: number) => void
+) => {
+    return callGeminiWithRetry(apiKey, systemPrompt, userMessage, useSearch, onRetry);
 };
 
 // --- SERVICE CHO CÁC BƯỚC ---
 
 // Bước 1: Lấy tin tức
-export const getNewsAndEvents = async (apiKey: string, keyword: string, systemPrompt: string): Promise<string> => {
-    return callGemini(apiKey, systemPrompt, `Chủ đề/Từ khóa cần tìm kiếm: "${keyword}"`, true);
+export const getNewsAndEvents = async (apiKey: string, keyword: string, systemPrompt: string, onRetry?: (reason: string, attempt: number) => void): Promise<string> => {
+    return callGemini(apiKey, systemPrompt, `Chủ đề/Từ khóa cần tìm kiếm: "${keyword}"`, true, onRetry);
 };
 
 // Bước 2: Tạo Dàn Ý - V5: Graceful Accept Mode (Always Complete)
@@ -148,7 +162,8 @@ export const createOutlineBatch = async (
     batchIndex: number,
     sceneCount: number,
     targetWords: number,
-    tolerance: number
+    tolerance: number,
+    onRetry?: (reason: string, attempt: number) => void
 ): Promise<OutlineBatchResult> => {
     // Calculate min/max from target ± tolerance
     const minWords = targetWords - tolerance;
@@ -199,7 +214,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
 
         try {
             console.log(`🚀 Batch ${batchIndex + 1} Attempt ${attempts + 1}/${MAX_RETRIES}...`);
-            const rawResponse = await callGemini(apiKey, systemPrompt, userPrompt);
+            const rawResponse = await callGemini(apiKey, systemPrompt, userPrompt, false, onRetry);
 
             // ========== POST-CORRECTION ENGINE ==========
             const sceneBlocks = rawResponse.split(/(?=Scene \d+:)/i).filter(block => /^Scene \d+:/i.test(block.trim()));
@@ -294,6 +309,10 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
         } catch (e: any) {
             console.error(`Gemini API Error (Attempt ${attempts + 1}):`, e);
             logError(2, `API Error at Batch ${batchIndex + 1} Attempt ${attempts + 1}: ${e.message}`, 'ERROR', { batchIndex, error: e.message });
+
+            // Notify UI
+            if (onRetry) onRetry(`API Error: ${e.message}`, attempts + 1);
+
             // On API error, try again if attempts allow
             feedback = `\n⚠️ Lỗi hệ thống: ${e.message}. Hãy thử lại.\n`;
             attempts++;
@@ -312,7 +331,8 @@ export const createScriptBatch = async (
     systemPrompt: string,
     previousContent: string,
     batchIndex: number,
-    sceneCount: number // Tổng số cảnh yêu cầu
+    sceneCount: number, // Tổng số cảnh yêu cầu
+    onRetry?: (reason: string, attempt: number) => void
 ): Promise<string> => {
     // Đồng bộ batch size với Step 2 để consistency
     const SCENES_PER_BATCH = 3;
@@ -343,14 +363,15 @@ QUY TẮC:
 4. Giữ đúng format: Visual và Audio/Voice Over.
 5. Nếu đây là batch cuối cùng (Scene ${endScene} == ${sceneCount}), hãy viết thêm phần Kết luận (Conclusion) nếu cần.
 `;
-    return callGemini(apiKey, systemPrompt, prompt);
+    return callGemini(apiKey, systemPrompt, prompt, false, onRetry);
 };
 
 // Bước 4: Tạo Prompt JSON
 export const generatePromptsBatch = async (
     apiKey: string,
     scriptChunk: string,
-    systemPrompt: string
+    systemPrompt: string,
+    onRetry?: (reason: string, attempt: number) => void
 ): Promise<string> => {
     const prompt = `
 Phần kịch bản cần xử lý:
@@ -360,7 +381,7 @@ NHIỆM VỤ:
 Trích xuất Image Prompts và Video Prompts cho các cảnh trong đoạn kịch bản trên thành JSON.
 Lưu ý: Chỉ trả về JSON thuần túy, không markdown.
 `;
-    return callGemini(apiKey, systemPrompt, prompt);
+    return callGemini(apiKey, systemPrompt, prompt, false, onRetry);
 };
 
 // Bước 5: Tách Voice Over - CẬP NHẬT: Min/Max Word Count
@@ -369,7 +390,8 @@ export const extractVoiceOver = async (
     fullScript: string,
     systemPrompt: string,
     minWords: number,
-    maxWords: number
+    maxWords: number,
+    onRetry?: (reason: string, attempt: number) => void
 ): Promise<string> => {
     return callGemini(apiKey, systemPrompt, `
 Kịch bản chi tiết cần trích xuất Voice Over:
@@ -380,7 +402,7 @@ YÊU CẦU ĐẶC BIỆT VỀ ĐỘ DÀI:
 - Mỗi câu Voice Over phải có độ dài từ **${minWords} đến ${maxWords} từ**.
 - Nếu câu quá ngắn, hãy gộp hoặc viết thêm cho đủ ý.
 - Nếu câu quá dài, hãy tách thành 2 câu.
-`);
+`, false, onRetry);
 };
 
 // Helper: Cắt kịch bản thành các chunk (mỗi chunk 3 scenes - đồng bộ với Step 2/3)
@@ -435,6 +457,6 @@ export const mergePromptJsons = (jsonStrings: string[]): string => {
 };
 
 // Bước 6: Metadata
-export const createMetadata = async (apiKey: string, detailedScript: string, systemPrompt: string): Promise<string> => {
-    return callGemini(apiKey, systemPrompt, `Nội dung kịch bản:\n${detailedScript.slice(0, 30000)}`);
+export const createMetadata = async (apiKey: string, detailedScript: string, systemPrompt: string, onRetry?: (reason: string, attempt: number) => void): Promise<string> => {
+    return callGemini(apiKey, systemPrompt, `Nội dung kịch bản:\n${detailedScript.slice(0, 30000)}`, false, onRetry);
 };
