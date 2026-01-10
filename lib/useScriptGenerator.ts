@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { StepOutputs, SystemPromptData, PromptPackManifest, BatchJob } from './types';
 import { getPromptContentById } from './prompt-utils';
+// Multi-Model Architecture: using new unified aiService
 import {
     getNewsAndEvents,
     createOutlineBatch,
@@ -10,7 +11,7 @@ import {
     mergePromptJsons,
     extractVoiceOver,
     createMetadata
-} from '@/services/geminiService';
+} from '@/services/aiService';
 import { STEPS_CONFIG } from './constants';
 
 interface UseScriptGeneratorOptions {
@@ -106,7 +107,10 @@ export const useScriptGenerator = (options: UseScriptGeneratorOptions) => {
                         message: `Creating Outline Batch ${b + 1}/${totalBatches}`
                     });
                     // Graceful Accept Mode: warnings are ignored in single-step mode
-                    const batchResult = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount, wordCountMin, wordCountMax);
+                    const targetWords = Math.floor((wordCountMin + wordCountMax) / 2);
+                    const tolerance = Math.floor((wordCountMax - wordCountMin) / 2);
+
+                    const batchResult = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount, targetWords, tolerance);
                     if (batchResult.content === "END_OF_OUTLINE") break;
                     fullOutline += "\n" + batchResult.content;
                 }

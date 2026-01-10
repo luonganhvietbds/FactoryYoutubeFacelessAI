@@ -14,7 +14,7 @@ import {
   mergePromptJsons,
   extractVoiceOver,
   createMetadata
-} from '@/services/geminiService';
+} from '@/services/aiService';
 import { apiKeyManager, ApiKeyInfo, KeyManagerState } from '@/lib/apiKeyManager';
 import { queuePersistence } from '@/lib/queuePersistence'; // NEW: Persistence
 import { Language, LANGUAGE_CONFIGS, getLanguageConfig } from '@/lib/languageConfig';
@@ -710,11 +710,16 @@ export default function Home() {
           // Single-mode Step 2 (warnings ignored for simplicity)
           const totalBatches = Math.ceil(sceneCount / 3);
           let fullOutline = "";
+
+          // Calculate Target & Tolerance from Min/Max to match Batch Mode logic
+          const targetWords = Math.floor((wordCountMin + wordCountMax) / 2);
+          const tolerance = Math.floor((wordCountMax - wordCountMin) / 2);
+
           for (let b = 0; b < totalBatches; b++) {
             setProgress({
               current: b + 1, total: totalBatches, message: `Creating Outline Batch ${b + 1}/${totalBatches}...`
             });
-            const result = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount, wordCountMin, wordCountMax);
+            const result = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount, targetWords, tolerance);
             if (result.content === "END_OF_OUTLINE") break;
             fullOutline += "\n" + result.content;
           }

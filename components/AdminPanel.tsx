@@ -13,6 +13,7 @@ import TrashIcon from './icons/TrashIcon';
 import CheckIcon from './icons/CheckIcon';
 import LoadingSpinnerIcon from './icons/LoadingSpinnerIcon';
 import LogOutIcon from './icons/LogOutIcon';
+import ModelManager from './ModelManager';
 
 interface AdminPanelProps {
     prompts: SystemPromptData[];
@@ -26,7 +27,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
     // --- STATE ---
     const [packs, setPacks] = useState<PromptPackManifest[]>([]);
     const [isLoadingPacks, setIsLoadingPacks] = useState(true);
-    const [activeTab, setActiveTab] = useState<'packs' | 'prompts' | 'cloud'>('packs');
+    const [activeTab, setActiveTab] = useState<'packs' | 'prompts' | 'cloud' | 'models'>('packs');
     const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
 
     // Edit State
@@ -658,6 +659,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                             isActive={activeTab === 'cloud'}
                             onClick={() => setActiveTab('cloud')}
                         />
+                        <SidebarItem
+                            id="models"
+                            label="Model Config"
+                            icon="🤖"
+                            isActive={activeTab === 'models'}
+                            onClick={() => setActiveTab('models')}
+                        />
 
                         <div className="border-t border-slate-800/50 my-4 mx-2"></div>
 
@@ -989,6 +997,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                                         </div>
                                     </div>
                                 </div>
+                            )}
+
+                            {/* --- TAB: MODELS --- */}
+                            {activeTab === 'models' && (
+                                <ModelManager />
                             )}
 
                         </div>
