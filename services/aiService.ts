@@ -376,6 +376,80 @@ YÊU CẦU ĐẶC BIỆT VỀ ĐỘ DÀI:
 };
 
 // ============================================================================
+// STEP 4: EXTRACT PROMPTS (Direct - No AI)
+// ============================================================================
+
+export const extractPromptsFromStep3 = (step3Output: string): string => {
+    const jsonBlocks = step3Output.match(/```json[\s\S]*?```/g) || [];
+    let allScenes: any[] = [];
+
+    jsonBlocks.forEach(block => {
+        try {
+            const parsed = JSON.parse(block.replace(/```json|```/g, '').trim());
+            if (Array.isArray(parsed)) allScenes.push(...parsed);
+        } catch (e) {
+            console.warn('Parse error in extractPromptsFromStep3:', e);
+        }
+    });
+
+    // If no ```json``` blocks found, try parsing as raw JSON
+    if (allScenes.length === 0) {
+        try {
+            const parsed = JSON.parse(step3Output.trim());
+            if (Array.isArray(parsed)) allScenes = parsed;
+        } catch (e) {
+            console.warn('Fallback parse failed:', e);
+        }
+    }
+
+    allScenes.sort((a, b) =>
+        (parseInt(String(a.scene).replace(/\D/g, '')) || 0) -
+        (parseInt(String(b.scene).replace(/\D/g, '')) || 0)
+    );
+
+    return JSON.stringify({
+        imagePrompts: allScenes.map(s => s.image_prompt || '[MISSING]'),
+        videoPrompts: allScenes.map(s => s.video_prompt || '[MISSING]')
+    }, null, 2);
+};
+
+// ============================================================================
+// STEP 5: EXTRACT VOICE OVER (Direct - No AI)
+// ============================================================================
+
+export const extractVoiceOverFromStep3 = (step3Output: string): string => {
+    const jsonBlocks = step3Output.match(/```json[\s\S]*?```/g) || [];
+    let allScenes: any[] = [];
+
+    jsonBlocks.forEach(block => {
+        try {
+            const parsed = JSON.parse(block.replace(/```json|```/g, '').trim());
+            if (Array.isArray(parsed)) allScenes.push(...parsed);
+        } catch (e) {
+            console.warn('Parse error in extractVoiceOverFromStep3:', e);
+        }
+    });
+
+    // If no ```json``` blocks found, try parsing as raw JSON
+    if (allScenes.length === 0) {
+        try {
+            const parsed = JSON.parse(step3Output.trim());
+            if (Array.isArray(parsed)) allScenes = parsed;
+        } catch (e) {
+            console.warn('Fallback parse failed:', e);
+        }
+    }
+
+    allScenes.sort((a, b) =>
+        (parseInt(String(a.scene).replace(/\D/g, '')) || 0) -
+        (parseInt(String(b.scene).replace(/\D/g, '')) || 0)
+    );
+
+    // Return ONLY voice_over text, one per line
+    return allScenes.map(s => s.voice_over?.trim() || '').join('\n');
+};
+
+// ============================================================================
 // STEP 6: CREATE METADATA
 // ============================================================================
 
