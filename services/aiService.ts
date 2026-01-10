@@ -84,9 +84,10 @@ export const createOutlineBatch = async (
     console.log(`📝 Step 2 Batch ${batchIndex + 1} using model: ${getModelIdForStep(2)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
 
     let attempts = 0;
-    const MAX_RETRIES = 3;
+    const MAX_RETRIES = 5; // Increased from 3 for better scene recovery
     let feedback = "";
     let lastResult: OutlineBatchResult = { content: "FAILED", warnings: [] };
+    let missingScenes: number[] = []; // Track missing scenes across attempts
 
     const expectedScenesList = Array.from({ length: endScene - startScene + 1 }, (_, i) => startScene + i);
     const requiredScenesStr = expectedScenesList.map(s => `Scene ${s}`).join(", ");
@@ -147,7 +148,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
 
             // 2. Validate existence and word count
             const finalScenes: string[] = [];
-            let missingScenes: number[] = [];
+            missingScenes = []; // Reset for this attempt
 
             for (const sceneNum of expectedScenesList) {
                 if (!correctedScenesMap.has(sceneNum)) {
@@ -243,7 +244,56 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
         }
     }
 
-    console.warn(`⚠️ Batch ${batchIndex + 1} Max Retries Exceeded. Accepting with warnings.`);
+    // ===== RECOVERY PASS: Fill Missing Scenes =====
+    if (missingScenes.length > 0) {
+        console.log(`🔧 Recovery Pass: Attempting to fill ${missingScenes.length} missing scenes: ${missingScenes.join(", ")}`);
+        const missingScenesStr = missingScenes.map(s => `Scene ${s}`).join(", ");
+        const recoveryPrompt = `
+NHIỆM VỤ KHẨN CẤP (RECOVERY):
+Viết NGAY các cảnh sau: **${missingScenesStr}**
+
+Context:
+${currentOutline.slice(-1500)}
+${lastResult.content.slice(-1500)}
+
+YÊU CẦU:
+1. Viết ĐẦY ĐỦ: ${missingScenesStr}.
+2. Format: Scene X: [Tên] / Hình ảnh: [...] / Lời dẫn: [...] (${targetWords} từ)
+`;
+        try {
+            const recoveryResponse = await adapter.generateContent({ systemPrompt, userMessage: recoveryPrompt });
+            const recoveryBlocks = recoveryResponse.content.split(/(?=Scene \d+:)/i).filter(block => /^Scene \d+:/i.test(block.trim()));
+            const recoveredScenesMap = new Map<number, string>();
+            recoveryBlocks.forEach(block => {
+                const match = block.match(/Scene (\d+):/i);
+                if (match && match[1]) recoveredScenesMap.set(parseInt(match[1]), block);
+            });
+
+            // Merge into lastResult
+            const allScenes = lastResult.content.split(/(?=Scene \d+:)/i).filter(block => /^Scene \d+:/i.test(block.trim()));
+            const allScenesMap = new Map<number, string>();
+            allScenes.forEach(block => {
+                const match = block.match(/Scene (\d+):/i);
+                if (match && match[1]) allScenesMap.set(parseInt(match[1]), block);
+            });
+
+            recoveredScenesMap.forEach((block, sceneNum) => {
+                if (!allScenesMap.has(sceneNum)) {
+                    allScenesMap.set(sceneNum, block);
+                    console.log(`✅ Recovered Scene ${sceneNum}`);
+                }
+            });
+
+            const sortedScenes = Array.from(allScenesMap.entries()).sort((a, b) => a[0] - b[0]).map(entry => entry[1]);
+            lastResult.content = sortedScenes.join('\n\n');
+            console.log(`🔧 Recovery Complete. Total scenes: ${sortedScenes.length}`);
+        } catch (e: any) {
+            console.error(`Recovery Pass Failed:`, e);
+            logError(2, `Recovery Failed: ${e.message}`, 'ERROR', { batchIndex, error: e.message });
+        }
+    }
+
+    console.warn(`⚠️ Batch ${batchIndex + 1} Max Retries Exceeded. Returning with ${lastResult.warnings.length} warnings.`);
     return lastResult;
 };
 
