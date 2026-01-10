@@ -88,6 +88,9 @@ export const createOutlineBatch = async (
     let feedback = "";
     let lastResult: OutlineBatchResult = { content: "FAILED", warnings: [] };
 
+    const expectedScenesList = Array.from({ length: endScene - startScene + 1 }, (_, i) => startScene + i);
+    const requiredScenesStr = expectedScenesList.map(s => `Scene ${s}`).join(", ");
+
     while (attempts < MAX_RETRIES) {
         const userPrompt = `
 Thông tin đầu vào (Tin tức/Sự kiện):
@@ -97,7 +100,7 @@ Dàn ý đã có (Context):
 ${currentOutline.slice(-2000)}
 
 NHIỆM VỤ HIỆN TẠI (Batch scenes ${startScene} -> ${endScene}):
-Hãy lập tiếp dàn ý chi tiết cho các cảnh từ **Scene ${startScene}** đến **Scene ${endScene}**.
+Hãy lập tiếp dàn ý chi tiết cho các cảnh: **${requiredScenesStr}**.
 Tổng số cảnh dự kiến: ${sceneCount}.
 
 ===== QUY TẮC ĐẾM TỪ TIẾNG VIỆT =====
@@ -128,16 +131,31 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
 
             const rawResponse = response.content;
 
-            // POST-CORRECTION ENGINE
+            // POST-CORRECTION ENGINE - STRICT MODE
             const sceneBlocks = rawResponse.split(/(?=Scene \d+:)/i).filter(block => /^Scene \d+:/i.test(block.trim()));
             const warnings: SceneWarning[] = [];
-            const correctedScenes: string[] = [];
-            const expectedSceneCount = endScene - startScene + 1;
+            const correctedScenesMap = new Map<number, string>();
 
-            sceneBlocks.forEach((block, idx) => {
-                const currentSceneNum = startScene + idx;
-                if (currentSceneNum > endScene) return;
+            // 1. Map blocks to scene numbers
+            sceneBlocks.forEach(block => {
+                const match = block.match(/Scene (\d+):/i);
+                if (match && match[1]) {
+                    const sceneNum = parseInt(match[1]);
+                    correctedScenesMap.set(sceneNum, block);
+                }
+            });
 
+            // 2. Validate existence and word count
+            const finalScenes: string[] = [];
+            let missingScenes: number[] = [];
+
+            for (const sceneNum of expectedScenesList) {
+                if (!correctedScenesMap.has(sceneNum)) {
+                    missingScenes.push(sceneNum);
+                    continue;
+                }
+
+                let block = correctedScenesMap.get(sceneNum)!;
                 const voMatch = block.match(/Lời dẫn:\s*([\s\S]*?)(?:\s*\(\d+\s*từ\)\s*)?(?=\n\n|$)/i);
 
                 if (voMatch && voMatch[1]) {
@@ -154,7 +172,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
                             : actualWordCount - minWords;
 
                         warnings.push({
-                            sceneNum: currentSceneNum,
+                            sceneNum,
                             actual: actualWordCount,
                             target: targetWords,
                             tolerance,
@@ -162,40 +180,45 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
                         });
                     }
 
-                    const correctedBlock = block.replace(
+                    // Normalize block format
+                    block = block.replace(
                         /Lời dẫn:\s*[\s\S]*?(?:\(\d+\s*từ\))?(?=\n\n|$)/i,
                         `Lời dẫn: ${rawContent} (${actualWordCount} từ)`
                     );
-                    correctedScenes.push(correctedBlock);
                 } else {
                     warnings.push({
-                        sceneNum: currentSceneNum,
+                        sceneNum,
                         actual: 0,
                         target: targetWords,
                         tolerance,
                         diff: -targetWords,
                     });
-                    correctedScenes.push(block);
                 }
-            });
+                finalScenes.push(block);
+            }
 
             lastResult = {
-                content: correctedScenes.join('\n\n'),
+                content: finalScenes.join('\n\n'),
                 warnings,
             };
 
-            if (warnings.length === 0 && correctedScenes.length >= expectedSceneCount) {
+            // 3. Strict Check: If missing scenes, FORCE RETRY
+            if (missingScenes.length > 0) {
+                feedback = `\n⚠️ LỖI NGHIÊM TRỌNG: Bạn đã bỏ qua các cảnh: ${missingScenes.map(s => `Scene ${s}`).join(", ")}.
+👉 YÊU CẦU: Viết lại ĐẦY ĐỦ các cảnh từ Scene ${startScene} đến Scene ${endScene}. Không được bỏ sót bất kỳ cảnh nào.\n`;
+                console.warn(`⚠️ Batch ${batchIndex + 1} Attempt ${attempts + 1} Failed: Missing scenes ${missingScenes.join(", ")}`);
+                if (onRetry) onRetry(`Missing scenes: ${missingScenes.join(", ")}`, attempts + 1);
+                attempts++;
+                continue; // Retry loop
+            }
+
+            if (warnings.length === 0) {
                 console.log(`✅ Batch ${batchIndex + 1} Passed validation on Attempt ${attempts + 1}`);
                 return lastResult;
             }
 
-            // Generate feedback for retry
+            // Generate feedback for word count issues
             feedback = `\n⚠️ CÁC LỖI CẦN SỬA NGAY (Lần thử ${attempts + 1}/${MAX_RETRIES}):\n`;
-
-            if (correctedScenes.length < expectedSceneCount) {
-                feedback += `- THIẾU ${expectedSceneCount - correctedScenes.length} cảnh. Hãy tạo đủ từ Scene ${startScene} đến Scene ${endScene}.\n`;
-            }
-
             warnings.forEach(w => {
                 if (w.actual === 0) {
                     feedback += `- Scene ${w.sceneNum}: Thiếu mục "Lời dẫn". Hãy bổ sung ngay.\n`;
@@ -206,7 +229,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
                 }
             });
 
-            console.warn(`⚠️ Batch ${batchIndex + 1} Attempt ${attempts + 1} Failed. Retrying with feedback...`);
+            console.warn(`⚠️ Batch ${batchIndex + 1} Attempt ${attempts + 1} Failed validation. Retrying...`);
             if (onRetry) onRetry(`Validation failed`, attempts + 1);
             attempts++;
 
@@ -220,7 +243,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
         }
     }
 
-    console.warn(`⚠️ Batch ${batchIndex + 1} Max Retries Exceeded. Accepting with ${lastResult.warnings.length} warnings.`);
+    console.warn(`⚠️ Batch ${batchIndex + 1} Max Retries Exceeded. Accepting with warnings.`);
     return lastResult;
 };
 
