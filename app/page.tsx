@@ -13,9 +13,7 @@ import {
   generatePromptsBatch,
   mergePromptJsons,
   extractVoiceOver,
-  createMetadata,
-  extractPromptsFromStep3,
-  extractVoiceOverFromStep3
+  createMetadata
 } from '@/services/aiService';
 import { apiKeyManager, ApiKeyInfo, KeyManagerState } from '@/lib/apiKeyManager';
 import { queuePersistence } from '@/lib/queuePersistence'; // NEW: Persistence
@@ -739,15 +737,17 @@ export default function Home() {
           }
           result = fullScript.trim();
         } else if (currentStep === 4) {
-          // Step 4: Direct extraction from Step 3 JSON
-          const step3Output = stepOutputs[3];
-          if (!step3Output) throw new Error("Thiếu output từ Step 3.");
-          result = extractPromptsFromStep3(step3Output);
+          const chunks = splitScriptIntoChunks(input);
+          const jsons = [];
+          for (let i = 0; i < chunks.length; i++) {
+            setProgress({ current: i + 1, total: chunks.length, message: `Prompt Batch ${i + 1}` });
+            jsons.push(await generatePromptsBatch(apiKey, chunks[i], promptContent));
+          }
+          result = mergePromptJsons(jsons);
         } else if (currentStep === 5) {
-          // Step 5: Direct extraction from Step 3 JSON
-          const step3Output = stepOutputs[3];
-          if (!step3Output) throw new Error("Thiếu output từ Step 3.");
-          result = extractVoiceOverFromStep3(step3Output);
+          const min = singleTargetWords - singleTolerance;
+          const max = singleTargetWords + singleTolerance;
+          result = await extractVoiceOver(apiKey, input, promptContent, min, max);
         }
         else if (currentStep === 6) result = await createMetadata(apiKey, input, promptContent);
       }

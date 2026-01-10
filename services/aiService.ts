@@ -88,6 +88,9 @@ export const createOutlineBatch = async (
     let feedback = "";
     let lastResult: OutlineBatchResult = { content: "FAILED", warnings: [] };
 
+    const expectedScenesList = Array.from({ length: endScene - startScene + 1 }, (_, i) => startScene + i);
+    const requiredScenesStr = expectedScenesList.map(s => `Scene ${s}`).join(", ");
+
     while (attempts < MAX_RETRIES) {
         const userPrompt = `
 Thông tin đầu vào (Tin tức/Sự kiện):
@@ -97,7 +100,7 @@ Dàn ý đã có (Context):
 ${currentOutline.slice(-2000)}
 
 NHIỆM VỤ HIỆN TẠI (Batch scenes ${startScene} -> ${endScene}):
-Hãy lập tiếp dàn ý chi tiết cho các cảnh từ **Scene ${startScene}** đến **Scene ${endScene}**.
+Hãy lập tiếp dàn ý chi tiết cho các cảnh: **${requiredScenesStr}**.
 Tổng số cảnh dự kiến: ${sceneCount}.
 
 ===== QUY TẮC ĐẾM TỪ TIẾNG VIỆT =====
@@ -128,16 +131,31 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
 
             const rawResponse = response.content;
 
-            // POST-CORRECTION ENGINE
+            // POST-CORRECTION ENGINE - STRICT MODE
             const sceneBlocks = rawResponse.split(/(?=Scene \d+:)/i).filter(block => /^Scene \d+:/i.test(block.trim()));
             const warnings: SceneWarning[] = [];
-            const correctedScenes: string[] = [];
-            const expectedSceneCount = endScene - startScene + 1;
+            const correctedScenesMap = new Map<number, string>();
 
-            sceneBlocks.forEach((block, idx) => {
-                const currentSceneNum = startScene + idx;
-                if (currentSceneNum > endScene) return;
+            // 1. Map blocks to scene numbers
+            sceneBlocks.forEach(block => {
+                const match = block.match(/Scene (\d+):/i);
+                if (match && match[1]) {
+                    const sceneNum = parseInt(match[1]);
+                    correctedScenesMap.set(sceneNum, block);
+                }
+            });
 
+            // 2. Validate existence and word count
+            const finalScenes: string[] = [];
+            let missingScenes: number[] = [];
+
+            for (const sceneNum of expectedScenesList) {
+                if (!correctedScenesMap.has(sceneNum)) {
+                    missingScenes.push(sceneNum);
+                    continue;
+                }
+
+                let block = correctedScenesMap.get(sceneNum)!;
                 const voMatch = block.match(/Lời dẫn:\s*([\s\S]*?)(?:\s*\(\d+\s*từ\)\s*)?(?=\n\n|$)/i);
 
                 if (voMatch && voMatch[1]) {
@@ -154,7 +172,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
                             : actualWordCount - minWords;
 
                         warnings.push({
-                            sceneNum: currentSceneNum,
+                            sceneNum,
                             actual: actualWordCount,
                             target: targetWords,
                             tolerance,
@@ -162,40 +180,45 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
                         });
                     }
 
-                    const correctedBlock = block.replace(
+                    // Normalize block format
+                    block = block.replace(
                         /Lời dẫn:\s*[\s\S]*?(?:\(\d+\s*từ\))?(?=\n\n|$)/i,
                         `Lời dẫn: ${rawContent} (${actualWordCount} từ)`
                     );
-                    correctedScenes.push(correctedBlock);
                 } else {
                     warnings.push({
-                        sceneNum: currentSceneNum,
+                        sceneNum,
                         actual: 0,
                         target: targetWords,
                         tolerance,
                         diff: -targetWords,
                     });
-                    correctedScenes.push(block);
                 }
-            });
+                finalScenes.push(block);
+            }
 
             lastResult = {
-                content: correctedScenes.join('\n\n'),
+                content: finalScenes.join('\n\n'),
                 warnings,
             };
 
-            if (warnings.length === 0 && correctedScenes.length >= expectedSceneCount) {
+            // 3. Strict Check: If missing scenes, FORCE RETRY
+            if (missingScenes.length > 0) {
+                feedback = `\n⚠️ LỖI NGHIÊM TRỌNG: Bạn đã bỏ qua các cảnh: ${missingScenes.map(s => `Scene ${s}`).join(", ")}.
+👉 YÊU CẦU: Viết lại ĐẦY ĐỦ các cảnh từ Scene ${startScene} đến Scene ${endScene}. Không được bỏ sót bất kỳ cảnh nào.\n`;
+                console.warn(`⚠️ Batch ${batchIndex + 1} Attempt ${attempts + 1} Failed: Missing scenes ${missingScenes.join(", ")}`);
+                if (onRetry) onRetry(`Missing scenes: ${missingScenes.join(", ")}`, attempts + 1);
+                attempts++;
+                continue; // Retry loop
+            }
+
+            if (warnings.length === 0) {
                 console.log(`✅ Batch ${batchIndex + 1} Passed validation on Attempt ${attempts + 1}`);
                 return lastResult;
             }
 
-            // Generate feedback for retry
+            // Generate feedback for word count issues
             feedback = `\n⚠️ CÁC LỖI CẦN SỬA NGAY (Lần thử ${attempts + 1}/${MAX_RETRIES}):\n`;
-
-            if (correctedScenes.length < expectedSceneCount) {
-                feedback += `- THIẾU ${expectedSceneCount - correctedScenes.length} cảnh. Hãy tạo đủ từ Scene ${startScene} đến Scene ${endScene}.\n`;
-            }
-
             warnings.forEach(w => {
                 if (w.actual === 0) {
                     feedback += `- Scene ${w.sceneNum}: Thiếu mục "Lời dẫn". Hãy bổ sung ngay.\n`;
@@ -206,7 +229,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
                 }
             });
 
-            console.warn(`⚠️ Batch ${batchIndex + 1} Attempt ${attempts + 1} Failed. Retrying with feedback...`);
+            console.warn(`⚠️ Batch ${batchIndex + 1} Attempt ${attempts + 1} Failed validation. Retrying...`);
             if (onRetry) onRetry(`Validation failed`, attempts + 1);
             attempts++;
 
@@ -220,7 +243,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
         }
     }
 
-    console.warn(`⚠️ Batch ${batchIndex + 1} Max Retries Exceeded. Accepting with ${lastResult.warnings.length} warnings.`);
+    console.warn(`⚠️ Batch ${batchIndex + 1} Max Retries Exceeded. Accepting with warnings.`);
     return lastResult;
 };
 
@@ -293,9 +316,22 @@ export const generatePromptsBatch = async (
 Phần kịch bản cần xử lý:
 ${scriptChunk}
 
-NHIỆM VỤ:
-Trích xuất Image Prompts và Video Prompts cho các cảnh trong đoạn kịch bản trên thành JSON.
-Lưu ý: Chỉ trả về JSON thuần túy, không markdown.
+NHIỆM VỤ (PURE EXTRACTION):
+Trích xuất NGUYÊN VĂN nội dung mục "Hình ảnh" của từng cảnh thành JSON.
+
+YÊU CẦU BẮT BUỘC:
+1. KHÔNG sáng tạo thêm. KHÔNG chỉnh sửa nội dung.
+2. Nếu kịch bản ghi: "Hình ảnh: Một con mèo đang ngủ." -> JSON phải là: "image_prompt": "Một con mèo đang ngủ."
+3. Chỉ trả về JSON thuần túy.
+
+Cấu trúc JSON:
+[
+  {
+    "id": "Scene X",
+    "image_prompt": "Nội dung nguyên văn từ mục Hình ảnh",
+    "video_prompt": "Nội dung nguyên văn từ mục Hình ảnh"
+  }
+]
 `;
 
     const response = await adapter.generateContent({
@@ -328,10 +364,19 @@ Kịch bản chi tiết cần trích xuất Voice Over:
 
 ${fullScript}
 
-YÊU CẦU ĐẶC BIỆT VỀ ĐỘ DÀI:
-- Mỗi câu Voice Over phải có độ dài từ **${minWords} đến ${maxWords} từ**.
-- Nếu câu quá ngắn, hãy gộp hoặc viết thêm cho đủ ý.
-- Nếu câu quá dài, hãy tách thành 2 câu.
+NHIỆM VỤ (PURE EXTRACTION):
+Trích xuất NGUYÊN VĂN nội dung mục "Lời dẫn" (Voice Over) của từng cảnh.
+
+YÊU CẦU BẮT BUỘC:
+1. TUYỆT ĐỐI KHÔNG CHỈNH SỬA, KHÔNG THÊM BỚT TỪ.
+2. KHÔNG gộp câu, KHÔNG tách câu.
+3. Kịch bản gốc viết thế nào, trích xuất y hệt thế ấy.
+4. Bỏ qua mọi yêu cầu về độ dài (min/max words). Độ dài là do kịch bản gốc quyết định.
+
+Output format:
+Scene X: [Nội dung Lời dẫn nguyên văn]
+Scene Y: [Nội dung Lời dẫn nguyên văn]
+...
 `;
 
     const response = await adapter.generateContent({
@@ -340,80 +385,6 @@ YÊU CẦU ĐẶC BIỆT VỀ ĐỘ DÀI:
     });
 
     return response.content;
-};
-
-// ============================================================================
-// STEP 4: EXTRACT PROMPTS (Direct - No AI)
-// ============================================================================
-
-export const extractPromptsFromStep3 = (step3Output: string): string => {
-    const jsonBlocks = step3Output.match(/```json[\s\S]*?```/g) || [];
-    let allScenes: any[] = [];
-
-    jsonBlocks.forEach(block => {
-        try {
-            const parsed = JSON.parse(block.replace(/```json|```/g, '').trim());
-            if (Array.isArray(parsed)) allScenes.push(...parsed);
-        } catch (e) {
-            console.warn('Parse error in extractPromptsFromStep3:', e);
-        }
-    });
-
-    // If no ```json``` blocks found, try parsing as raw JSON
-    if (allScenes.length === 0) {
-        try {
-            const parsed = JSON.parse(step3Output.trim());
-            if (Array.isArray(parsed)) allScenes = parsed;
-        } catch (e) {
-            console.warn('Fallback parse failed:', e);
-        }
-    }
-
-    allScenes.sort((a, b) =>
-        (parseInt(String(a.scene).replace(/\D/g, '')) || 0) -
-        (parseInt(String(b.scene).replace(/\D/g, '')) || 0)
-    );
-
-    return JSON.stringify({
-        imagePrompts: allScenes.map(s => s.image_prompt || '[MISSING]'),
-        videoPrompts: allScenes.map(s => s.video_prompt || '[MISSING]')
-    }, null, 2);
-};
-
-// ============================================================================
-// STEP 5: EXTRACT VOICE OVER (Direct - No AI)
-// ============================================================================
-
-export const extractVoiceOverFromStep3 = (step3Output: string): string => {
-    const jsonBlocks = step3Output.match(/```json[\s\S]*?```/g) || [];
-    let allScenes: any[] = [];
-
-    jsonBlocks.forEach(block => {
-        try {
-            const parsed = JSON.parse(block.replace(/```json|```/g, '').trim());
-            if (Array.isArray(parsed)) allScenes.push(...parsed);
-        } catch (e) {
-            console.warn('Parse error in extractVoiceOverFromStep3:', e);
-        }
-    });
-
-    // If no ```json``` blocks found, try parsing as raw JSON
-    if (allScenes.length === 0) {
-        try {
-            const parsed = JSON.parse(step3Output.trim());
-            if (Array.isArray(parsed)) allScenes = parsed;
-        } catch (e) {
-            console.warn('Fallback parse failed:', e);
-        }
-    }
-
-    allScenes.sort((a, b) =>
-        (parseInt(String(a.scene).replace(/\D/g, '')) || 0) -
-        (parseInt(String(b.scene).replace(/\D/g, '')) || 0)
-    );
-
-    // Return ONLY voice_over text, one per line
-    return allScenes.map(s => s.voice_over?.trim() || '').join('\n');
 };
 
 // ============================================================================
