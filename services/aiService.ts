@@ -132,13 +132,23 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
             const rawResponse = response.content;
 
             // POST-CORRECTION ENGINE - STRICT MODE
-            const sceneBlocks = rawResponse.split(/(?=Scene \d+:)/i).filter(block => /^Scene \d+:/i.test(block.trim()));
+            // 1. Sanitize Markdown & Normalize
+            const cleanResponse = rawResponse
+                .replace(/\*\*/g, '')   // Remove bold
+                .replace(/##/g, '')     // Remove headers
+                .replace(/Scene\s+(\d+)/gi, 'Scene $1'); // Normalize spaces
+
+            // 2. Split using robust regex (Scene X: or Scene X.)
+            const sceneBlocks = cleanResponse
+                .split(/(?=Scene\s+\d+[:.])/i)
+                .filter(block => /Scene\s+\d+[:.]/i.test(block.trim()));
+
             const warnings: SceneWarning[] = [];
             const correctedScenesMap = new Map<number, string>();
 
-            // 1. Map blocks to scene numbers
+            // 3. Map blocks to scene numbers
             sceneBlocks.forEach(block => {
-                const match = block.match(/Scene (\d+):/i);
+                const match = block.match(/Scene\s+(\d+)[:.]/i);
                 if (match && match[1]) {
                     const sceneNum = parseInt(match[1]);
                     correctedScenesMap.set(sceneNum, block);
