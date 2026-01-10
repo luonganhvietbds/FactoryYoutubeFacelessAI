@@ -65,8 +65,8 @@ export default function Home() {
   // Settings & Inputs
   const [topicKeyword, setTopicKeyword] = useState<string>('');
   const [sceneCount, setSceneCount] = useState<number>(45);
-  const [wordCountMin, setWordCountMin] = useState<number>(18);
-  const [wordCountMax, setWordCountMax] = useState<number>(22);
+  const [singleTargetWords, setSingleTargetWords] = useState<number>(20);
+  const [singleTolerance, setSingleTolerance] = useState<number>(2);
   const [apiKey, setApiKey] = useState<string>('');
   const [saveApiKey, setSaveApiKey] = useState<boolean>(false);
 
@@ -255,7 +255,7 @@ export default function Home() {
       let fullOutline = "";
       for (let b = 0; b < totalOutlineBatches; b++) {
         setProgress({ current: 2, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Outline Batch ${b + 1}/${totalOutlineBatches}...` });
-        const result = await createOutlineBatch(apiKey, input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, sceneCount, wordCountMin, wordCountMax);
+        const result = await createOutlineBatch(apiKey, input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, sceneCount, batchTargetWords, batchWordTolerance);
         if (result.content === "END_OF_OUTLINE") break;
         fullOutline += "\n" + result.content;
       } outputs[2] = fullOutline.trim();
@@ -283,7 +283,9 @@ export default function Home() {
 
       // Step 5
       setProgress({ current: 5, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Tách Voice...` });
-      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), wordCountMin, wordCountMax);
+      const minVO = batchTargetWords - batchWordTolerance;
+      const maxVO = batchTargetWords + batchWordTolerance;
+      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), minVO, maxVO);
       await wait(delayBetweenSteps);
 
       // Step 6
@@ -707,13 +709,13 @@ export default function Home() {
         const input = getInputForStep(currentStep);
         if (!input) throw new Error("Thiếu input.");
         if (currentStep === 2) {
-          // Single-mode Step 2 (warnings ignored for simplicity)
+          // Single-mode Step 2
           const totalBatches = Math.ceil(sceneCount / 3);
           let fullOutline = "";
 
-          // Calculate Target & Tolerance from Min/Max to match Batch Mode logic
-          const targetWords = Math.floor((wordCountMin + wordCountMax) / 2);
-          const tolerance = Math.floor((wordCountMax - wordCountMin) / 2);
+          // Use direct Target/Tolerance mechanism
+          const targetWords = singleTargetWords;
+          const tolerance = singleTolerance;
 
           for (let b = 0; b < totalBatches; b++) {
             setProgress({
@@ -742,7 +744,11 @@ export default function Home() {
             jsons.push(await generatePromptsBatch(apiKey, chunks[i], promptContent));
           }
           result = mergePromptJsons(jsons);
-        } else if (currentStep === 5) result = await extractVoiceOver(apiKey, input, promptContent, wordCountMin, wordCountMax);
+        } else if (currentStep === 5) {
+          const min = singleTargetWords - singleTolerance;
+          const max = singleTargetWords + singleTolerance;
+          result = await extractVoiceOver(apiKey, input, promptContent, min, max);
+        }
         else if (currentStep === 6) result = await createMetadata(apiKey, input, promptContent);
       }
       if (result) {
@@ -1257,31 +1263,34 @@ export default function Home() {
 
                       <div>
                         <label className="text-xs font-bold text-slate-400 uppercase flex justify-between">
-                          <span>Word Limit / VO (Giới hạn từ/câu)</span>
+                          <span>Word Count Target (Số từ mục tiêu)</span>
                         </label>
                         <div className="flex gap-4 mt-2">
                           <div className="flex-1">
-                            <label className="text-[10px] text-slate-500 mb-1 block">Min Words</label>
+                            <label className="text-[10px] text-slate-500 mb-1 block">Target (Mục tiêu)</label>
                             <input
                               type="number"
-                              min="5"
+                              min="10"
                               max="100"
-                              value={wordCountMin}
-                              onChange={e => setWordCountMin(Number(e.target.value))}
+                              value={singleTargetWords}
+                              onChange={e => setSingleTargetWords(Number(e.target.value))}
                               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:border-sky-500 outline-none"
                             />
                           </div>
                           <div className="flex-1">
-                            <label className="text-[10px] text-slate-500 mb-1 block">Max Words</label>
+                            <label className="text-[10px] text-slate-500 mb-1 block">Tolerance (± Dung sai)</label>
                             <input
                               type="number"
-                              min="10"
-                              max="200"
-                              value={wordCountMax}
-                              onChange={e => setWordCountMax(Number(e.target.value))}
+                              min="0"
+                              max="10"
+                              value={singleTolerance}
+                              onChange={e => setSingleTolerance(Number(e.target.value))}
                               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:border-sky-500 outline-none"
                             />
                           </div>
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-1 font-mono text-center">
+                          Range: {singleTargetWords - singleTolerance} - {singleTargetWords + singleTolerance} words
                         </div>
                       </div>
                     </div>
