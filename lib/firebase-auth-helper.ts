@@ -1,5 +1,4 @@
-import { getAuth } from "firebase/auth";
-import { ActionCodeSettings, Link } from "firebase/auth";
+import { ActionCodeSettings } from "firebase/auth";
 
 export const actionCodeSettings: ActionCodeSettings = {
     url: typeof window !== "undefined" ? `${window.location.origin}/login` : "http://localhost:3000/login",
