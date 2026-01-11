@@ -12,10 +12,9 @@ function ForgotPasswordForm() {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [sent, setSent] = useState(false);
-    const { resetPassword } = useAuth();
+    const { resetPassword, addToast } = useAuth();
 
     useEffect(() => {
-        // Pre-fill email from query params (from login page)
         const emailParam = searchParams.get('email');
         if (emailParam) {
             setEmail(emailParam);
@@ -26,7 +25,7 @@ function ForgotPasswordForm() {
         e.preventDefault();
 
         if (!email) {
-            setError('Please enter your email address');
+            setError('Vui lòng nhập địa chỉ email');
             return;
         }
 
@@ -35,11 +34,10 @@ function ForgotPasswordForm() {
             setMessage('');
             setLoading(true);
             await resetPassword(email);
-            setMessage(`We sent you a password change link to ${email}.`);
+            addToast('success', `Đã gửi liên kết đặt lại mật khẩu đến ${email}`);
             setSent(true);
         } catch {
-            // Don't expose if email exists or not - always show success
-            setMessage(`We sent you a password change link to ${email}.`);
+            addToast('success', `Đã gửi liên kết đặt lại mật khẩu đến ${email}`);
             setSent(true);
         } finally {
             setLoading(false);

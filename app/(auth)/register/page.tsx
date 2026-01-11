@@ -14,7 +14,7 @@ export default function RegisterPage() {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { register } = useAuth();
+    const { register, addToast } = useAuth();
     const router = useRouter();
 
     function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -31,19 +31,18 @@ export default function RegisterPage() {
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
 
-        // Validation
         if (!fullName || !email || !password || !repeatPassword) {
-            setError('Please fill in all fields');
+            setError('Vui lòng điền đầy đủ thông tin');
             return;
         }
 
         if (password !== repeatPassword) {
-            setError('Passwords do not match.');
+            setError('Mật khẩu không khớp');
             return;
         }
 
         if (password.length < 6) {
-            setError('Password must be at least 6 characters');
+            setError('Mật khẩu phải có ít nhất 6 ký tự');
             return;
         }
 
@@ -52,25 +51,19 @@ export default function RegisterPage() {
             setLoading(true);
             await register(email, password, fullName);
 
-            // Store email in sessionStorage for verify-email page
             sessionStorage.setItem('pendingVerificationEmail', email);
 
-            // Redirect to verify email page
+            addToast('success', 'Đăng ký thành công! Vui lòng xác thực email');
             router.push('/verify-email');
         } catch (err: unknown) {
-            // Handle specific Firebase errors with friendly messages
-            const error = err as { code?: string };
-            if (error.code === 'auth/email-already-in-use') {
-                setError('User already exists. Sign in?');
+            const error = err as { message?: string };
+            if (error.message?.includes('already in use')) {
+                setError('Email đã được sử dụng. Đăng nhập?');
                 setTimeout(() => {
                     router.push('/login');
                 }, 2000);
-            } else if (error.code === 'auth/invalid-email') {
-                setError('Invalid email address');
-            } else if (error.code === 'auth/weak-password') {
-                setError('Password is too weak');
             } else {
-                setError('Registration failed. Please try again.');
+                setError(error.message || 'Đăng ký thất bại. Vui lòng thử lại');
             }
         } finally {
             setLoading(false);

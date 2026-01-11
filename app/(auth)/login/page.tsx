@@ -10,14 +10,14 @@ export default function LoginPage() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const { login } = useAuth();
+    const { login, addToast } = useAuth();
     const router = useRouter();
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
 
         if (!email || !password) {
-            setError('Please fill in all fields');
+            setError('Vui lòng điền đầy đủ thông tin');
             return;
         }
 
@@ -26,17 +26,17 @@ export default function LoginPage() {
             setLoading(true);
             const user = await login(email, password);
 
-            // Check if email is verified
             if (!user.emailVerified) {
+                addToast('info', 'Vui lòng xác thực email để tiếp tục');
                 router.push('/verify-email');
                 return;
             }
 
-            // Success - redirect to dashboard
+            addToast('success', 'Đăng nhập thành công!');
             router.push('/');
-        } catch {
-            // Always show generic error message - don't expose Firebase errors
-            setError('Email or Password Incorrect');
+        } catch (err: unknown) {
+            const error = err as { message?: string };
+            setError(error.message || 'Email hoặc mật khẩu không chính xác');
         } finally {
             setLoading(false);
         }
