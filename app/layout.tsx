@@ -1,6 +1,8 @@
-import type { Metadata } from "next";
+"use client";
+
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/lib/AuthContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -12,11 +14,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "AI Script Factory - Trình Biên Tập Video AI",
-  description: "Tự động hóa quy trình sản xuất Video 6 bước với Google Gemini AI",
-};
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -24,11 +21,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi">
+      <head>
+        <title>AI Script Factory - Trình Biên Tập Video AI</title>
+        <meta name="description" content="Tự động hóa quy trình sản xuất Video 6 bước với Google Gemini AI" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
 }
+

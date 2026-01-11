@@ -18,6 +18,8 @@ import {
 import { apiKeyManager, ApiKeyInfo, KeyManagerState } from '@/lib/apiKeyManager';
 import { queuePersistence } from '@/lib/queuePersistence'; // NEW: Persistence
 import { Language, LANGUAGE_CONFIGS, getLanguageConfig } from '@/lib/languageConfig';
+import { useAuth } from '@/lib/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 import StepProgressBar from '@/components/StepProgressBar';
 import BatchResumeModal from '@/components/BatchResumeModal'; // NEW: Resume UI
@@ -860,490 +862,503 @@ export default function Home() {
     setResumeState(null);
   };
 
+  const { currentUser, logout } = useAuth();
+
+  const handleLogout = async () => {
+    if (confirm('Bạn có chắc chắn muốn đăng xuất?')) {
+      await logout();
+    }
+  };
+
   return (
-    <div className="bg-slate-900 text-white min-h-screen font-sans">
-      {/* Resume Modal */}
-      {resumeState && (
-        <BatchResumeModal
-          age={resumeState.age}
-          jobCount={resumeState.jobCount}
-          onResume={handleResumeSession}
-          onDiscard={handleDiscardSession}
-        />
-      )}
-      {showAdmin && <AdminPanel prompts={promptsLibrary} onUpdatePrompts={handleUpdatePrompts} onClose={() => setShowAdmin(false)} />}
+    <ProtectedRoute>
+      <div className="bg-slate-900 text-white min-h-screen font-sans">
+        {/* Resume Modal */}
+        {resumeState && (
+          <BatchResumeModal
+            age={resumeState.age}
+            jobCount={resumeState.jobCount}
+            onResume={handleResumeSession}
+            onDiscard={handleDiscardSession}
+          />
+        )}
+        {showAdmin && <AdminPanel prompts={promptsLibrary} onUpdatePrompts={handleUpdatePrompts} onClose={() => setShowAdmin(false)} />}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <header className="flex flex-col md:flex-row justify-between items-center mb-8 border-b border-slate-700 pb-6 gap-4">
-          <div>
-            <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-teal-400">AI SCRIPT FACTORY</h1>
-            <p className="text-slate-400 text-sm mt-1">Marketplace Ready - Phase 3</p>
-          </div>
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <header className="flex flex-col md:flex-row justify-between items-center mb-8 border-b border-slate-700 pb-6 gap-4">
+            <div>
+              <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-teal-400">AI SCRIPT FACTORY</h1>
+              <div className="flex items-center gap-3 mt-1">
+                <p className="text-slate-400 text-sm">Xin chào, <span className="text-sky-400 font-medium">{currentUser?.displayName || currentUser?.email}</span></p>
+                <button onClick={handleLogout} className="text-xs text-red-400 hover:text-red-300 transition-colors">(Đăng xuất)</button>
+              </div>
+            </div>
 
-          <div className="flex flex-wrap items-center gap-4">
-            {/* LANGUAGE SELECTOR */}
-            <select
-              value={language}
-              onChange={(e) => {
-                setLanguage(e.target.value as Language);
-                // Reset prompt selections when language changes
-                setSelectedPromptIds({});
-              }}
-              className="bg-slate-800 border border-amber-500 rounded px-3 py-2 text-sm font-bold focus:ring-amber-500 cursor-pointer hover:bg-slate-700 transition-colors"
-            >
-              {Object.values(LANGUAGE_CONFIGS).map(config => (
-                <option key={config.id} value={config.id}>
-                  {config.flag} {config.name}
-                </option>
-              ))}
-            </select>
-
-            {/* PACK SELECTOR */}
-            <div className="relative group">
+            <div className="flex flex-wrap items-center gap-4">
+              {/* LANGUAGE SELECTOR */}
               <select
-                onChange={(e) => handleApplyPack(e.target.value)}
-                className="bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-sky-400 font-bold focus:ring-sky-500 cursor-pointer hover:bg-slate-700 transition-colors appearance-none pr-8"
-                defaultValue=""
+                value={language}
+                onChange={(e) => {
+                  setLanguage(e.target.value as Language);
+                  // Reset prompt selections when language changes
+                  setSelectedPromptIds({});
+                }}
+                className="bg-slate-800 border border-amber-500 rounded px-3 py-2 text-sm font-bold focus:ring-amber-500 cursor-pointer hover:bg-slate-700 transition-colors"
               >
-                <option value="" disabled>{language === 'vi' ? '--- Chọn Bộ AI Workforce ---' : '--- Select AI Workforce ---'}</option>
-                {filteredPacks.map(pack => (
-                  <option key={pack.id} value={pack.id}>{pack.name} (v{pack.version})</option>
+                {Object.values(LANGUAGE_CONFIGS).map(config => (
+                  <option key={config.id} value={config.id}>
+                    {config.flag} {config.name}
+                  </option>
                 ))}
               </select>
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">▼</div>
+
+              {/* PACK SELECTOR */}
+              <div className="relative group">
+                <select
+                  onChange={(e) => handleApplyPack(e.target.value)}
+                  className="bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-sky-400 font-bold focus:ring-sky-500 cursor-pointer hover:bg-slate-700 transition-colors appearance-none pr-8"
+                  defaultValue=""
+                >
+                  <option value="" disabled>{language === 'vi' ? '--- Chọn Bộ AI Workforce ---' : '--- Select AI Workforce ---'}</option>
+                  {filteredPacks.map(pack => (
+                    <option key={pack.id} value={pack.id}>{pack.name} (v{pack.version})</option>
+                  ))}
+                </select>
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">▼</div>
+              </div>
+
+              <div className="h-6 w-px bg-slate-700 mx-2"></div>
+
+              <button onClick={handleResetPrompts} title="Reset về mặc định" className="text-slate-500 hover:text-red-400 p-2"><RefreshCwIcon className="h-5 w-5" /></button>
+              <button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${isBatchMode ? 'bg-amber-600 text-white shadow-lg' : 'bg-slate-800 text-slate-300 border border-slate-600'}`}>
+                {isBatchMode ? '📦 Batch Mode' : '📦 Batch Mode'}
+              </button>
+              <button onClick={handleAdminLogin} className="text-slate-500 hover:text-sky-400 p-2"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M8 11h8" /><path d="M12 7v8" /></svg></button>
+              <button
+                onClick={handleDownloadAllZip}
+                className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg"
+                title="Tải toàn bộ kết quả (.zip)"
+              >
+                <DownloadIcon className="w-5 h-5" /> <span>ZIP ALL</span>
+              </button>
             </div>
+          </header>
 
-            <div className="h-6 w-px bg-slate-700 mx-2"></div>
-
-            <button onClick={handleResetPrompts} title="Reset về mặc định" className="text-slate-500 hover:text-red-400 p-2"><RefreshCwIcon className="h-5 w-5" /></button>
-            <button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${isBatchMode ? 'bg-amber-600 text-white shadow-lg' : 'bg-slate-800 text-slate-300 border border-slate-600'}`}>
-              {isBatchMode ? '📦 Batch Mode' : '📦 Batch Mode'}
-            </button>
-            <button onClick={handleAdminLogin} className="text-slate-500 hover:text-sky-400 p-2"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M8 11h8" /><path d="M12 7v8" /></svg></button>
-            <button
-              onClick={handleDownloadAllZip}
-              className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg"
-              title="Tải toàn bộ kết quả (.zip)"
-            >
-              <DownloadIcon className="w-5 h-5" /> <span>ZIP ALL</span>
-            </button>
+          {/* API KEY */}
+          <div className="max-w-3xl mx-auto mb-6 p-3 bg-slate-800 rounded border border-slate-700 flex gap-4 items-center">
+            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} className="flex-grow bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white" placeholder="Type Gemini API Key..." />
+            <label className="flex items-center gap-2 text-sm text-slate-400"><input type="checkbox" checked={saveApiKey} onChange={e => setSaveApiKey(e.target.checked)} /> Save Key</label>
           </div>
-        </header>
 
-        {/* API KEY */}
-        <div className="max-w-3xl mx-auto mb-6 p-3 bg-slate-800 rounded border border-slate-700 flex gap-4 items-center">
-          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} className="flex-grow bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white" placeholder="Type Gemini API Key..." />
-          <label className="flex items-center gap-2 text-sm text-slate-400"><input type="checkbox" checked={saveApiKey} onChange={e => setSaveApiKey(e.target.checked)} /> Save Key</label>
-        </div>
+          {isBatchMode ? (
+            /* ========== ISOLATED BATCH MODE UI ==========  */
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-amber-600 to-orange-600 p-4 rounded-lg">
+                <h2 className="text-2xl font-bold text-white">📦 Batch Mode - Xử Lý Hàng Loạt</h2>
+                <p className="text-amber-100 text-sm mt-1">Viết nhiều kịch bản cùng lúc (Steps 2-6)</p>
+              </div>
 
-        {isBatchMode ? (
-          /* ========== ISOLATED BATCH MODE UI ==========  */
-          <div className="space-y-6">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-amber-600 to-orange-600 p-4 rounded-lg">
-              <h2 className="text-2xl font-bold text-white">📦 Batch Mode - Xử Lý Hàng Loạt</h2>
-              <p className="text-amber-100 text-sm mt-1">Viết nhiều kịch bản cùng lúc (Steps 2-6)</p>
-            </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* LEFT COLUMN: Config & Input */}
+                <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 space-y-4">
+                  <h3 className="text-lg font-bold text-amber-400 mb-3">⚙️ Cấu Hình</h3>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* LEFT COLUMN: Config & Input */}
-              <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 space-y-4">
-                <h3 className="text-lg font-bold text-amber-400 mb-3">⚙️ Cấu Hình</h3>
-
-                {/* Scene Count */}
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase flex justify-between mb-2">
-                    <span>Số Cảnh</span>
-                    <span className="text-sky-400">{batchSceneCount} scenes</span>
-                  </label>
-                  <input
-                    type="range"
-                    min="5"
-                    max="300"
-                    value={batchSceneCount}
-                    onChange={e => setBatchSceneCount(Number(e.target.value))}
-                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-
-                {/* Word Count Target + Tolerance (Simplified UX) */}
-                <div className="space-y-3">
+                  {/* Scene Count */}
                   <div>
                     <label className="text-xs font-bold text-slate-400 uppercase flex justify-between mb-2">
-                      <span>🎯 Target Words</span>
-                      <span className="text-amber-400">{batchTargetWords} từ</span>
+                      <span>Số Cảnh</span>
+                      <span className="text-sky-400">{batchSceneCount} scenes</span>
                     </label>
                     <input
                       type="range"
-                      min="10"
-                      max="40"
-                      value={batchTargetWords}
-                      onChange={e => setBatchTargetWords(Number(e.target.value))}
-                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                      min="5"
+                      max="300"
+                      value={batchSceneCount}
+                      onChange={e => setBatchSceneCount(Number(e.target.value))}
+                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
                     />
                   </div>
+
+                  {/* Word Count Target + Tolerance (Simplified UX) */}
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase flex justify-between mb-2">
+                        <span>🎯 Target Words</span>
+                        <span className="text-amber-400">{batchTargetWords} từ</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="10"
+                        max="40"
+                        value={batchTargetWords}
+                        onChange={e => setBatchTargetWords(Number(e.target.value))}
+                        className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase flex justify-between mb-2">
+                        <span>📊 Tolerance</span>
+                        <span className="text-sky-400">±{batchWordTolerance}</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        value={batchWordTolerance}
+                        onChange={e => setBatchWordTolerance(Number(e.target.value))}
+                        className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                      />
+                    </div>
+                    {/* Preview Range */}
+                    <div className="bg-slate-900 p-2 rounded flex justify-center items-center gap-2">
+                      <span className="text-xs text-slate-500">Chấp nhận:</span>
+                      <span className="text-sm font-bold text-green-400">
+                        {batchTargetWords - batchWordTolerance} - {batchTargetWords + batchWordTolerance} từ
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Delay Config */}
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Delay Giữa Jobs (giây)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="60"
+                      value={batchDelaySeconds}
+                      onChange={e => setBatchDelaySeconds(Number(e.target.value))}
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm"
+                    />
+                  </div>
+
+                  {/* Max Concurrent Jobs */}
                   <div>
                     <label className="text-xs font-bold text-slate-400 uppercase flex justify-between mb-2">
-                      <span>📊 Tolerance</span>
-                      <span className="text-sky-400">±{batchWordTolerance}</span>
+                      <span>Song Song</span>
+                      <span className="text-green-400">{maxConcurrent} jobs</span>
                     </label>
                     <input
                       type="range"
                       min="1"
-                      max="10"
-                      value={batchWordTolerance}
-                      onChange={e => setBatchWordTolerance(Number(e.target.value))}
-                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                      max="5"
+                      value={maxConcurrent}
+                      onChange={e => setMaxConcurrent(Number(e.target.value))}
+                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
                     />
                   </div>
-                  {/* Preview Range */}
-                  <div className="bg-slate-900 p-2 rounded flex justify-center items-center gap-2">
-                    <span className="text-xs text-slate-500">Chấp nhận:</span>
-                    <span className="text-sm font-bold text-green-400">
-                      {batchTargetWords - batchWordTolerance} - {batchTargetWords + batchWordTolerance} từ
-                    </span>
-                  </div>
-                </div>
 
-                {/* Delay Config */}
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Delay Giữa Jobs (giây)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="60"
-                    value={batchDelaySeconds}
-                    onChange={e => setBatchDelaySeconds(Number(e.target.value))}
-                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm"
-                  />
-                </div>
+                  <hr className="border-slate-700" />
 
-                {/* Max Concurrent Jobs */}
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase flex justify-between mb-2">
-                    <span>Song Song</span>
-                    <span className="text-green-400">{maxConcurrent} jobs</span>
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    value={maxConcurrent}
-                    onChange={e => setMaxConcurrent(Number(e.target.value))}
-                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-
-                <hr className="border-slate-700" />
-
-                {/* API Key Pool Section */}
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-sm font-bold text-amber-400">🔑 API Key Pool</h4>
-                    <span className="text-xs text-slate-400">
-                      {keyPoolState.keys.filter(k => k.status === 'active').length} / {keyPoolState.keys.length} active
-                    </span>
-                  </div>
-
-                  <textarea
-                    value={keyPoolInput}
-                    onChange={e => setKeyPoolInput(e.target.value)}
-                    rows={3}
-                    placeholder="Nhập API Keys (mỗi key 1 dòng)..."
-                    className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-xs text-white font-mono"
-                  />
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleAddKeysToPool}
-                      className="flex-1 py-2 bg-green-600 hover:bg-green-700 rounded text-xs font-bold text-white"
-                    >
-                      ➕ Thêm Key
-                    </button>
-                    <button
-                      onClick={handleCheckAllKeys}
-                      disabled={keyPoolState.isChecking}
-                      className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 rounded text-xs font-bold text-white disabled:opacity-50"
-                    >
-                      {keyPoolState.isChecking ? '🔄...' : '🔍 Check'}
-                    </button>
-                    <button
-                      onClick={handleClearAllKeys}
-                      className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded text-xs font-bold text-white"
-                    >
-                      🗑️
-                    </button>
-                  </div>
-
-                  {/* Key Status List */}
-                  {keyPoolState.keys.length > 0 && (
-                    <div className="max-h-32 overflow-y-auto space-y-1 custom-scrollbar">
-                      {keyPoolState.keys.map((keyInfo, idx) => (
-                        <div key={idx} className="flex items-center gap-2 bg-slate-900 p-2 rounded text-xs">
-                          <span className={`w-2 h-2 rounded-full ${getKeyStatusColor(keyInfo.status)}`}></span>
-                          <span className="flex-1 font-mono text-slate-300 truncate">
-                            {keyInfo.key.substring(0, 8)}...{keyInfo.key.substring(keyInfo.key.length - 4)}
-                          </span>
-                          <span className="text-slate-500">{keyInfo.usageCount}×</span>
-                          <button
-                            onClick={() => handleRemoveKey(keyInfo.key)}
-                            className="text-red-400 hover:text-red-300"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
+                  {/* API Key Pool Section */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-sm font-bold text-amber-400">🔑 API Key Pool</h4>
+                      <span className="text-xs text-slate-400">
+                        {keyPoolState.keys.filter(k => k.status === 'active').length} / {keyPoolState.keys.length} active
+                      </span>
                     </div>
-                  )}
-                </div>
 
-                <hr className="border-slate-700" />
+                    <textarea
+                      value={keyPoolInput}
+                      onChange={e => setKeyPoolInput(e.target.value)}
+                      rows={3}
+                      placeholder="Nhập API Keys (mỗi key 1 dòng)..."
+                      className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-xs text-white font-mono"
+                    />
 
-                {/* Input Textarea */}
-                <div>
-                  <label className="text-sm font-bold text-white mb-2 block">Nhập Kịch Bản</label>
-                  <textarea
-                    value={batchInputRaw}
-                    onChange={e => setBatchInputRaw(e.target.value)}
-                    rows={8}
-                    placeholder="Kịch bản 1: Nội dung...&#10;&#10;Kịch bản 2: Nội dung khác...&#10;&#10;(Cách nhau 1 dòng trống)"
-                    className="w-full bg-slate-900 border border-slate-600 rounded p-3 text-sm text-white font-mono"
-                  />
-                </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleAddKeysToPool}
+                        className="flex-1 py-2 bg-green-600 hover:bg-green-700 rounded text-xs font-bold text-white"
+                      >
+                        ➕ Thêm Key
+                      </button>
+                      <button
+                        onClick={handleCheckAllKeys}
+                        disabled={keyPoolState.isChecking}
+                        className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 rounded text-xs font-bold text-white disabled:opacity-50"
+                      >
+                        {keyPoolState.isChecking ? '🔄...' : '🔍 Check'}
+                      </button>
+                      <button
+                        onClick={handleClearAllKeys}
+                        className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded text-xs font-bold text-white"
+                      >
+                        🗑️
+                      </button>
+                    </div>
 
-                <button
-                  onClick={handleBatchParseInput}
-                  disabled={isProcessingBatch}
-                  className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
-                >
-                  ➕ Thêm Vào Hàng Chờ
-                </button>
-              </div>
+                    {/* Key Status List */}
+                    {keyPoolState.keys.length > 0 && (
+                      <div className="max-h-32 overflow-y-auto space-y-1 custom-scrollbar">
+                        {keyPoolState.keys.map((keyInfo, idx) => (
+                          <div key={idx} className="flex items-center gap-2 bg-slate-900 p-2 rounded text-xs">
+                            <span className={`w-2 h-2 rounded-full ${getKeyStatusColor(keyInfo.status)}`}></span>
+                            <span className="flex-1 font-mono text-slate-300 truncate">
+                              {keyInfo.key.substring(0, 8)}...{keyInfo.key.substring(keyInfo.key.length - 4)}
+                            </span>
+                            <span className="text-slate-500">{keyInfo.usageCount}×</span>
+                            <button
+                              onClick={() => handleRemoveKey(keyInfo.key)}
+                              className="text-red-400 hover:text-red-300"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
-              {/* RIGHT COLUMNS: Queue & Results */}
-              <div className="lg:col-span-2 bg-slate-800 p-6 rounded-lg border border-slate-700 space-y-4">
-                {/* Header with Run Button */}
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-bold text-white">
-                    📋 Hàng Chờ: {batchQueue.length} | ✅ Hoàn Thành: {processedJobs.filter(j => j.status === 'completed').length}
-                  </h3>
+                  <hr className="border-slate-700" />
+
+                  {/* Input Textarea */}
+                  <div>
+                    <label className="text-sm font-bold text-white mb-2 block">Nhập Kịch Bản</label>
+                    <textarea
+                      value={batchInputRaw}
+                      onChange={e => setBatchInputRaw(e.target.value)}
+                      rows={8}
+                      placeholder="Kịch bản 1: Nội dung...&#10;&#10;Kịch bản 2: Nội dung khác...&#10;&#10;(Cách nhau 1 dòng trống)"
+                      className="w-full bg-slate-900 border border-slate-600 rounded p-3 text-sm text-white font-mono"
+                    />
+                  </div>
+
                   <button
-                    onClick={handleRunBatchQueue}
-                    disabled={isProcessingBatch || batchQueue.length === 0}
-                    className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+                    onClick={handleBatchParseInput}
+                    disabled={isProcessingBatch}
+                    className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
                   >
-                    {isProcessingBatch ? '🔄 Đang Chạy...' : '▶️ RUN BATCH'}
+                    ➕ Thêm Vào Hàng Chờ
                   </button>
                 </div>
 
-                {/* Progress Indicator */}
-                {batchProgress && (
-                  <div className="bg-slate-900 p-4 rounded border border-amber-500">
-                    <p className="text-amber-400 font-bold mb-2">{batchProgress.message}</p>
-                    <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all"
-                        style={{ width: `${(batchProgress.currentStep / 6) * 100}%` }}
-                      />
-                    </div>
+                {/* RIGHT COLUMNS: Queue & Results */}
+                <div className="lg:col-span-2 bg-slate-800 p-6 rounded-lg border border-slate-700 space-y-4">
+                  {/* Header with Run Button */}
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-white">
+                      📋 Hàng Chờ: {batchQueue.length} | ✅ Hoàn Thành: {processedJobs.filter(j => j.status === 'completed').length}
+                    </h3>
+                    <button
+                      onClick={handleRunBatchQueue}
+                      disabled={isProcessingBatch || batchQueue.length === 0}
+                      className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+                    >
+                      {isProcessingBatch ? '🔄 Đang Chạy...' : '▶️ RUN BATCH'}
+                    </button>
                   </div>
-                )}
 
-                {/* Queue List */}
-                <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
-                  {/* Pending/Processing Jobs */}
-                  {batchQueue.map((job, idx) => (
-                    <div key={job.id} className={`p-3 rounded border ${job.status === 'processing'
-                      ? 'bg-amber-900/20 border-amber-500'
-                      : 'bg-slate-900 border-slate-700'
-                      }`}>
-                      <div className="flex justify-between items-center mb-1">
-                        <span className={job.status === 'processing' ? 'text-amber-400 font-bold' : 'text-slate-400'}>
-                          {job.status === 'processing' ? '🔄' : '⏳'} Job {idx + 1}
-                        </span>
-                        <span className="text-xs text-slate-500 truncate max-w-[200px]">{job.input.slice(0, 40)}...</span>
+                  {/* Progress Indicator */}
+                  {batchProgress && (
+                    <div className="bg-slate-900 p-4 rounded border border-amber-500">
+                      <p className="text-amber-400 font-bold mb-2">{batchProgress.message}</p>
+                      <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all"
+                          style={{ width: `${(batchProgress.currentStep / 6) * 100}%` }}
+                        />
                       </div>
-                      {/* Per-job progress display */}
-                      {job.status === 'processing' && job.currentStep && (
-                        <div className="mt-2">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span className="text-amber-300">Step {job.currentStep}/6</span>
-                            <span className="text-amber-400">{job.stepProgress}</span>
-                          </div>
-                          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all duration-300"
-                              style={{ width: `${((job.currentStep - 1) / 5) * 100}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
                     </div>
-                  ))}
+                  )}
 
-                  {/* Processed Jobs */}
-                  {processedJobs.map((job, idx) => (
-                    <div key={job.id} className={`p-3 rounded border ${job.status === 'completed'
-                      ? 'bg-green-900/20 border-green-600'
-                      : 'bg-red-900/20 border-red-600'
-                      }`}>
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className={job.status === 'completed' ? 'text-green-400' : 'text-red-400'}>
-                              {job.status === 'completed' ? '✅' : '❌'} Job {idx + 1}
-                            </span>
-                            {/* Quality Score Badge */}
-                            {job.status === 'completed' && job.qualityScore && (
-                              <span className={`text-xs px-2 py-0.5 rounded ${job.qualityScore.score >= 90 ? 'bg-green-900/50 text-green-400' :
-                                job.qualityScore.score >= 70 ? 'bg-amber-900/50 text-amber-400' :
-                                  'bg-red-900/50 text-red-400'
-                                }`}>
-                                ⭐ {job.qualityScore.score}%
-                              </span>
-                            )}
-                            {/* Warning count */}
-                            {job.warnings && job.warnings.length > 0 && (
-                              <span className="text-xs text-amber-400">
-                                ⚠️ {job.warnings.length} warnings
-                              </span>
-                            )}
-                          </div>
-                          {/* Enhanced Error Display */}
-                          {job.error && (
-                            <div className="mt-2 p-3 bg-red-950/50 border border-red-800 rounded max-h-40 overflow-y-auto custom-scrollbar">
-                              <pre className="text-red-300 text-xs whitespace-pre-wrap font-mono leading-relaxed">
-                                {job.error}
-                              </pre>
-                            </div>
-                          )}
+                  {/* Queue List */}
+                  <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
+                    {/* Pending/Processing Jobs */}
+                    {batchQueue.map((job, idx) => (
+                      <div key={job.id} className={`p-3 rounded border ${job.status === 'processing'
+                        ? 'bg-amber-900/20 border-amber-500'
+                        : 'bg-slate-900 border-slate-700'
+                        }`}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className={job.status === 'processing' ? 'text-amber-400 font-bold' : 'text-slate-400'}>
+                            {job.status === 'processing' ? '🔄' : '⏳'} Job {idx + 1}
+                          </span>
+                          <span className="text-xs text-slate-500 truncate max-w-[200px]">{job.input.slice(0, 40)}...</span>
                         </div>
-
-                        {job.status === 'completed' && (
-                          <button
-                            onClick={() => handleDownloadBatchJob(job)}
-                            className="ml-4 bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm font-bold text-white flex items-center gap-2 transition"
-                          >
-                            <DownloadIcon className="w-4 h-4" /> ZIP
-                          </button>
+                        {/* Per-job progress display */}
+                        {job.status === 'processing' && job.currentStep && (
+                          <div className="mt-2">
+                            <div className="flex justify-between text-xs mb-1">
+                              <span className="text-amber-300">Step {job.currentStep}/6</span>
+                              <span className="text-amber-400">{job.stepProgress}</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all duration-300"
+                                style={{ width: `${((job.currentStep - 1) / 5) * 100}%` }}
+                              />
+                            </div>
+                          </div>
                         )}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* SINGLE MODE UI */
-          <>
-            <div className="mb-10"><StepProgressBar steps={STEPS_CONFIG} currentStep={viewingStep} completedSteps={completedSteps} onStepClick={setViewingStep} /></div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex flex-col h-[750px]">
-                <h2 className="text-2xl font-bold mb-1 text-sky-400">{activeStepConfig.title}</h2>
-                <div className="mb-4">
-                  <label className="text-xs font-bold text-slate-500 uppercase">AI Persona</label>
-                  <select value={selectedPromptIds[viewingStep] || ''} onChange={handlePromptSelectionChange} className="w-full bg-slate-700 border border-slate-600 rounded py-2 px-3 text-white text-sm">
-                    {availablePromptsForStep.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
-                <div className="flex-grow overflow-auto mb-4 custom-scrollbar">
-                  {viewingStep === 1 && <input type="text" value={topicKeyword} onChange={e => setTopicKeyword(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-3" placeholder="Keyword..." />}
+                    ))}
 
-                  {viewingStep === 2 && (
-                    <div className="space-y-4 mb-4">
-                      <div>
-                        <label className="text-xs font-bold text-slate-400 uppercase flex justify-between">
-                          <span>Scene Count (Số cảnh)</span>
-                          <span className="text-sky-400">{sceneCount} scenes</span>
-                        </label>
-                        <input type="range" min="5" max="300" value={sceneCount} onChange={e => setSceneCount(Number(e.target.value))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer mt-2" />
-                        <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1"><span>Min: 5</span><span>Max: 300</span></div>
-                      </div>
+                    {/* Processed Jobs */}
+                    {processedJobs.map((job, idx) => (
+                      <div key={job.id} className={`p-3 rounded border ${job.status === 'completed'
+                        ? 'bg-green-900/20 border-green-600'
+                        : 'bg-red-900/20 border-red-600'
+                        }`}>
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className={job.status === 'completed' ? 'text-green-400' : 'text-red-400'}>
+                                {job.status === 'completed' ? '✅' : '❌'} Job {idx + 1}
+                              </span>
+                              {/* Quality Score Badge */}
+                              {job.status === 'completed' && job.qualityScore && (
+                                <span className={`text-xs px-2 py-0.5 rounded ${job.qualityScore.score >= 90 ? 'bg-green-900/50 text-green-400' :
+                                  job.qualityScore.score >= 70 ? 'bg-amber-900/50 text-amber-400' :
+                                    'bg-red-900/50 text-red-400'
+                                  }`}>
+                                  ⭐ {job.qualityScore.score}%
+                                </span>
+                              )}
+                              {/* Warning count */}
+                              {job.warnings && job.warnings.length > 0 && (
+                                <span className="text-xs text-amber-400">
+                                  ⚠️ {job.warnings.length} warnings
+                                </span>
+                              )}
+                            </div>
+                            {/* Enhanced Error Display */}
+                            {job.error && (
+                              <div className="mt-2 p-3 bg-red-950/50 border border-red-800 rounded max-h-40 overflow-y-auto custom-scrollbar">
+                                <pre className="text-red-300 text-xs whitespace-pre-wrap font-mono leading-relaxed">
+                                  {job.error}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
 
-                      <div>
-                        <label className="text-xs font-bold text-slate-400 uppercase flex justify-between">
-                          <span>Word Count Target (Số từ mục tiêu)</span>
-                        </label>
-                        <div className="flex gap-4 mt-2">
-                          <div className="flex-1">
-                            <label className="text-[10px] text-slate-500 mb-1 block">Target (Mục tiêu)</label>
-                            <input
-                              type="number"
-                              min="10"
-                              max="100"
-                              value={singleTargetWords}
-                              onChange={e => setSingleTargetWords(Number(e.target.value))}
-                              className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:border-sky-500 outline-none"
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <label className="text-[10px] text-slate-500 mb-1 block">Tolerance (± Dung sai)</label>
-                            <input
-                              type="number"
-                              min="0"
-                              max="10"
-                              value={singleTolerance}
-                              onChange={e => setSingleTolerance(Number(e.target.value))}
-                              className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:border-sky-500 outline-none"
-                            />
-                          </div>
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-1 font-mono text-center">
-                          Range: {singleTargetWords - singleTolerance} - {singleTargetWords + singleTolerance} words
+                          {job.status === 'completed' && (
+                            <button
+                              onClick={() => handleDownloadBatchJob(job)}
+                              className="ml-4 bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm font-bold text-white flex items-center gap-2 transition"
+                            >
+                              <DownloadIcon className="w-4 h-4" /> ZIP
+                            </button>
+                          )}
                         </div>
                       </div>
-                    </div>
-                  )}
-
-                  {getInputForStep(viewingStep) && viewingStep !== 1 && (
-                    <textarea value={editableInput} onChange={e => setEditableInput(e.target.value)} rows={10} className="w-full bg-slate-900 border border-slate-700 rounded p-3 text-sm text-slate-300" />
-                  )}
-                  {getInputForStep(viewingStep) && viewingStep !== 1 && <button onClick={handleUpdateInput} className="text-xs bg-green-700 mt-2 px-2 py-1 rounded">Update Input</button>}
-                  {updateSuccessMessage && <span className="text-green-400 text-xs ml-2">{updateSuccessMessage}</span>}
-                </div>
-                <div className="mt-auto pt-4 border-t border-slate-700">
-                  {viewingStep === currentStep && <button onClick={handleGenerate} disabled={isLoading} className="w-full py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded shadow-lg flex justify-center items-center gap-2">{isLoading ? <LoadingSpinnerIcon className="animate-spin h-5 w-5" /> : <WandIcon className="h-5 w-5" />} {activeStepConfig.buttonText}</button>}
-                  {error && <p className="text-red-400 text-sm mt-2 text-center">{error}</p>}
-                </div>
-              </div>
-              <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex flex-col h-[750px] relative">
-                <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-700">
-                  <h2 className="text-lg font-bold text-white">Result</h2>
-                  <div className="flex gap-2">
-                    {stepOutputs[viewingStep] && (
-                      <button onClick={() => handleDownloadSingle(viewingStep, stepOutputs[viewingStep]!)} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 transition-colors" title="Download .txt">
-                        <DownloadIcon className="h-4 w-4" />
-                      </button>
-                    )}
-                    {stepOutputs[viewingStep] && <button onClick={handleCopyResult} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 transition-colors"><CopyIcon className="h-4 w-4" /></button>}
+                    ))}
                   </div>
                 </div>
-                <div className={`bg-slate-900 rounded p-4 flex-grow overflow-auto border border-slate-700 relative ${viewingStep === 4 ? 'p-0' : ''}`}>
-                  {/* PROGRESS OVERLAY */}
-                  {isLoading && progress && (
-                    <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 p-6 text-center">
-                      <LoadingSpinnerIcon className="h-10 w-10 animate-spin text-sky-500 mb-4" />
-                      <h3 className="text-lg font-bold text-white mb-2">{progress.message}</h3>
-                      <div className="w-64 h-2 bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-sky-500 to-indigo-500 transition-all duration-300 ease-out"
-                          style={{ width: `${(progress.current / progress.total) * 100}%` }}
-                        ></div>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-2">Đang xử lý bước {progress.current}/{progress.total}</p>
-                    </div>
-                  )}
-
-                  {isLoading && viewingStep === currentStep && !progress ? <LoadingSpinnerIcon className="h-10 w-10 animate-spin text-sky-500 m-auto" /> :
-                    (viewingStep === 4 && stepOutputs[viewingStep] ? renderSplitPromptView(stepOutputs[viewingStep]!) : <div className="whitespace-pre-wrap text-sm text-slate-200">{stepOutputs[viewingStep]}</div>)
-                  }
-                </div>
               </div>
             </div>
-          </>
-        )}
-      </main>
-    </div>
+          ) : (
+            /* SINGLE MODE UI */
+            <>
+              <div className="mb-10"><StepProgressBar steps={STEPS_CONFIG} currentStep={viewingStep} completedSteps={completedSteps} onStepClick={setViewingStep} /></div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex flex-col h-[750px]">
+                  <h2 className="text-2xl font-bold mb-1 text-sky-400">{activeStepConfig.title}</h2>
+                  <div className="mb-4">
+                    <label className="text-xs font-bold text-slate-500 uppercase">AI Persona</label>
+                    <select value={selectedPromptIds[viewingStep] || ''} onChange={handlePromptSelectionChange} className="w-full bg-slate-700 border border-slate-600 rounded py-2 px-3 text-white text-sm">
+                      {availablePromptsForStep.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex-grow overflow-auto mb-4 custom-scrollbar">
+                    {viewingStep === 1 && <input type="text" value={topicKeyword} onChange={e => setTopicKeyword(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-3" placeholder="Keyword..." />}
+
+                    {viewingStep === 2 && (
+                      <div className="space-y-4 mb-4">
+                        <div>
+                          <label className="text-xs font-bold text-slate-400 uppercase flex justify-between">
+                            <span>Scene Count (Số cảnh)</span>
+                            <span className="text-sky-400">{sceneCount} scenes</span>
+                          </label>
+                          <input type="range" min="5" max="300" value={sceneCount} onChange={e => setSceneCount(Number(e.target.value))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer mt-2" />
+                          <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1"><span>Min: 5</span><span>Max: 300</span></div>
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-bold text-slate-400 uppercase flex justify-between">
+                            <span>Word Count Target (Số từ mục tiêu)</span>
+                          </label>
+                          <div className="flex gap-4 mt-2">
+                            <div className="flex-1">
+                              <label className="text-[10px] text-slate-500 mb-1 block">Target (Mục tiêu)</label>
+                              <input
+                                type="number"
+                                min="10"
+                                max="100"
+                                value={singleTargetWords}
+                                onChange={e => setSingleTargetWords(Number(e.target.value))}
+                                className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:border-sky-500 outline-none"
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <label className="text-[10px] text-slate-500 mb-1 block">Tolerance (± Dung sai)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="10"
+                                value={singleTolerance}
+                                onChange={e => setSingleTolerance(Number(e.target.value))}
+                                className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:border-sky-500 outline-none"
+                              />
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-1 font-mono text-center">
+                            Range: {singleTargetWords - singleTolerance} - {singleTargetWords + singleTolerance} words
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {getInputForStep(viewingStep) && viewingStep !== 1 && (
+                      <textarea value={editableInput} onChange={e => setEditableInput(e.target.value)} rows={10} className="w-full bg-slate-900 border border-slate-700 rounded p-3 text-sm text-slate-300" />
+                    )}
+                    {getInputForStep(viewingStep) && viewingStep !== 1 && <button onClick={handleUpdateInput} className="text-xs bg-green-700 mt-2 px-2 py-1 rounded">Update Input</button>}
+                    {updateSuccessMessage && <span className="text-green-400 text-xs ml-2">{updateSuccessMessage}</span>}
+                  </div>
+                  <div className="mt-auto pt-4 border-t border-slate-700">
+                    {viewingStep === currentStep && <button onClick={handleGenerate} disabled={isLoading} className="w-full py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded shadow-lg flex justify-center items-center gap-2">{isLoading ? <LoadingSpinnerIcon className="animate-spin h-5 w-5" /> : <WandIcon className="h-5 w-5" />} {activeStepConfig.buttonText}</button>}
+                    {error && <p className="text-red-400 text-sm mt-2 text-center">{error}</p>}
+                  </div>
+                </div>
+                <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex flex-col h-[750px] relative">
+                  <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-700">
+                    <h2 className="text-lg font-bold text-white">Result</h2>
+                    <div className="flex gap-2">
+                      {stepOutputs[viewingStep] && (
+                        <button onClick={() => handleDownloadSingle(viewingStep, stepOutputs[viewingStep]!)} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 transition-colors" title="Download .txt">
+                          <DownloadIcon className="h-4 w-4" />
+                        </button>
+                      )}
+                      {stepOutputs[viewingStep] && <button onClick={handleCopyResult} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 transition-colors"><CopyIcon className="h-4 w-4" /></button>}
+                    </div>
+                  </div>
+                  <div className={`bg-slate-900 rounded p-4 flex-grow overflow-auto border border-slate-700 relative ${viewingStep === 4 ? 'p-0' : ''}`}>
+                    {/* PROGRESS OVERLAY */}
+                    {isLoading && progress && (
+                      <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 p-6 text-center">
+                        <LoadingSpinnerIcon className="h-10 w-10 animate-spin text-sky-500 mb-4" />
+                        <h3 className="text-lg font-bold text-white mb-2">{progress.message}</h3>
+                        <div className="w-64 h-2 bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-sky-500 to-indigo-500 transition-all duration-300 ease-out"
+                            style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                          ></div>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-2">Đang xử lý bước {progress.current}/{progress.total}</p>
+                      </div>
+                    )}
+
+                    {isLoading && viewingStep === currentStep && !progress ? <LoadingSpinnerIcon className="h-10 w-10 animate-spin text-sky-500 m-auto" /> :
+                      (viewingStep === 4 && stepOutputs[viewingStep] ? renderSplitPromptView(stepOutputs[viewingStep]!) : <div className="whitespace-pre-wrap text-sm text-slate-200">{stepOutputs[viewingStep]}</div>)
+                    }
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </main>
+      </div>
+    </ProtectedRoute>
   );
 }
