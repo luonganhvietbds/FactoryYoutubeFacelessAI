@@ -447,6 +447,12 @@ export default function Home() {
 
   // 1. Parse Input: Tách các kịch bản bằng dòng trống
   const handleBatchParseInput = () => {
+    // 🔒 CHECK PACK SELECTION FIRST
+    if (!selectedPackId) {
+      addToast('error', '⚠️ Vui lòng chọn Pack trước khi thêm kịch bản vào hàng chờ');
+      return;
+    }
+    
     if (!batchInputRaw.trim()) {
       alert('⚠️ Vui lòng nhập nội dung kịch bản');
       return;
@@ -584,16 +590,40 @@ export default function Home() {
           script: fullScript
         });
       }
-      outputs[3] = fullScript.trim();
+       outputs[3] = fullScript.trim();
 
-      // Step 4: Trích xuất Prompts
-      const chunks = splitScriptIntoChunks(outputs[3]);
-      const jsons = [];
-      for (let i = 0; i < chunks.length; i++) {
-        await updateJobProgress(4, `Prompts ${i + 1}/${chunks.length}`);
-        jsons.push(await generatePromptsBatch(apiKey, chunks[i], getPromptContentById(selectedPromptIds[4], promptsLibrary), (r, a) => updateJobProgress(4, `Prompts ${i + 1}/${chunks.length} (Retry ${a}: ${r})`)));
+      // Step 4: Trích xuất Prompts (with error handling for image references)
+      try {
+        const chunks = splitScriptIntoChunks(outputs[3]);
+        const jsons = [];
+        for (let i = 0; i < chunks.length; i++) {
+          await updateJobProgress(4, `Prompts ${i + 1}/${chunks.length}`);
+          
+          // Check for invalid image references before sending to AI
+          const chunk = chunks[i];
+          if (chunk.includes('image.png') || chunk.includes('.png')) {
+            console.warn(`⚠️ Chunk ${i + 1} contains image file references, cleaning...`);
+            // Remove or replace image file references
+            const cleanedChunk = chunk.replace(/image\.png/g, '').replace(/\.png/g, '');
+            
+            jsons.push(await generatePromptsBatch(apiKey, cleanedChunk, getPromptContentById(selectedPromptIds[4], promptsLibrary), (r, a) => updateJobProgress(4, `Prompts ${i + 1}/${chunks.length} (Retry ${a}: ${r})`)));
+          } else {
+            jsons.push(await generatePromptsBatch(apiKey, chunk, getPromptContentById(selectedPromptIds[4], promptsLibrary), (r, a) => updateJobProgress(4, `Prompts ${i + 1}/${chunks.length} (Retry ${a}: ${r})`)));
+          }
+        }
+        outputs[4] = mergePromptJsons(jsons);
+      } catch (step4Error: any) {
+        // Handle specific image error
+        if (step4Error.message?.includes('image.png') || step4Error.message?.includes('image input') || step4Error.message?.includes('does not support image')) {
+          throw new Error(
+            `❌ Lỗi Step 4 (Trích xuất Prompts): Kịch bản chứa tham chiếu hình ảnh không hợp lệ.\n` +
+            `👉 Gợi ý: Đảm bảo trường "Image Prompt" chứa mô tả văn bản, không phải đường dẫn file.\n` +
+            `💡 Ví dụ đúng: "A beautiful sunset over mountains"\n` +
+            `❌ Ví dụ sai: "image.png" hoặc "photos/image.jpg"`
+          );
+        }
+        throw step4Error;
       }
-      outputs[4] = mergePromptJsons(jsons);
 
       // Step 5: Tách Voice Over
       await updateJobProgress(5, 'Voice Over...');
@@ -620,6 +650,12 @@ export default function Home() {
 
   // 3. Run Batch Queue: Chạy toàn bộ queue (Parallel với maxConcurrent)
   const handleRunBatchQueue = async () => {
+    // 🔒 VALIDATE PACK SELECTION FIRST
+    if (!selectedPackId) {
+      addToast('error', '⚠️ Vui lòng chọn và kích hoạt Pack để chạy Batch Mode');
+      return;
+    }
+    
     // Check API Key availability (single key or pool)
     const hasKeyPool = keyPoolState.keys.length > 0 && keyPoolState.keys.some(k => k.status === 'active' || k.status === 'unknown');
     if (!apiKey && !hasKeyPool) {
@@ -822,13 +858,31 @@ export default function Home() {
           }
           result = fullScript.trim();
         } else if (currentStep === 4) {
-          const chunks = splitScriptIntoChunks(input);
-          const jsons = [];
-          for (let i = 0; i < chunks.length; i++) {
-            setProgress({ current: i + 1, total: chunks.length, message: `Prompt Batch ${i + 1}` });
-            jsons.push(await generatePromptsBatch(apiKey, chunks[i], promptContent));
+          try {
+            const chunks = splitScriptIntoChunks(input);
+            const jsons = [];
+            for (let i = 0; i < chunks.length; i++) {
+              setProgress({ current: i + 1, total: chunks.length, message: `Prompt Batch ${i + 1}` });
+              
+              // Check for invalid image references
+              const chunk = chunks[i];
+              if (chunk.includes('image.png') || chunk.includes('.png')) {
+                const cleanedChunk = chunk.replace(/image\.png/g, '').replace(/\.png/g, '');
+                jsons.push(await generatePromptsBatch(apiKey, cleanedChunk, promptContent));
+              } else {
+                jsons.push(await generatePromptsBatch(apiKey, chunk, promptContent));
+              }
+            }
+            result = mergePromptJsons(jsons);
+          } catch (step4Error: any) {
+            if (step4Error.message?.includes('image.png') || step4Error.message?.includes('image input') || step4Error.message?.includes('does not support image')) {
+              throw new Error(
+                `❌ Lỗi Step 4: Kịch bản chứa tham chiếu hình ảnh không hợp lệ.\n` +
+                `👉 Đảm bảo trường "Image Prompt" chứa mô tả văn bản, không phải đường dẫn file.`
+              );
+            }
+            throw step4Error;
           }
-          result = mergePromptJsons(jsons);
         } else if (currentStep === 5) {
           const min = singleTargetWords - singleTolerance;
           const max = singleTargetWords + singleTolerance;
@@ -1072,13 +1126,28 @@ export default function Home() {
             <label className="flex items-center gap-2 text-sm text-slate-400"><input type="checkbox" checked={saveApiKey} onChange={e => setSaveApiKey(e.target.checked)} /> Save Key</label>
           </div>
 
-          {isBatchMode ? (
+            {isBatchMode ? (
             /* ========== ISOLATED BATCH MODE UI ==========  */
             <div className="space-y-6">
               {/* Header */}
               <div className="bg-gradient-to-r from-amber-600 to-orange-600 p-4 rounded-lg">
-                <h2 className="text-2xl font-bold text-white">📦 Batch Mode - Xử Lý Hàng Loạt</h2>
-                <p className="text-amber-100 text-sm mt-1">Viết nhiều kịch bản cùng lúc (Steps 2-6)</p>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">📦 Batch Mode - Xử Lý Hàng Loạt</h2>
+                    <p className="text-amber-100 text-sm mt-1">Viết nhiều kịch bản cùng lúc (Steps 2-6)</p>
+                  </div>
+                  {/* Pack Indicator */}
+                  {selectedPackId ? (
+                    <div className="bg-amber-900/50 border border-amber-500/50 px-3 py-1.5 rounded-lg">
+                      <span className="text-xs text-amber-300 font-medium">Pack:</span>
+                      <span className="text-sm text-white font-bold ml-2">{selectedPack?.name || 'Đã chọn'}</span>
+                    </div>
+                  ) : (
+                    <div className="bg-red-900/50 border border-red-500/50 px-3 py-1.5 rounded-lg">
+                      <span className="text-sm text-red-300 font-medium">⚠️ Chưa chọn Pack</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
