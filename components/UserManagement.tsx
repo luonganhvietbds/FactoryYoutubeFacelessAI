@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, doc, updateDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { UserData, UserPermissions, DEFAULT_MEMBER_PERMISSIONS, DEFAULT_ADMIN_PERMISSIONS } from '@/lib/types';
+import { UserData, UserPermissions, DEFAULT_MEMBER_PERMISSIONS, DEFAULT_ADMIN_PERMISSIONS, PromptPackManifest } from '@/lib/types';
+import { RegistryService } from '@/lib/prompt-registry/client-registry';
 
-// Icons
 import EditIcon from './icons/EditIcon';
 import SaveIcon from './icons/SaveIcon';
 import TrashIcon from './icons/TrashIcon';
@@ -16,15 +16,162 @@ interface UserManagementProps {
     onRefresh?: () => void;
 }
 
+interface PackPermissionSelectorProps {
+    selectedIds: string[];
+    onChange: (ids: string[]) => void;
+    availablePacks: PromptPackManifest[];
+}
+
+const PackPermissionSelectorPacks: Prompt: React.FC<PackPermissionSelectorProps> = ({
+    selectedIds,
+    onChange,
+    availablePacks
+}) => {
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const filteredPacks = useMemo(() => {
+        if (!searchTerm.trim()) return availablePacks;
+        const term = searchTerm.toLowerCase();
+        return availablePacks.filter(pack =>
+            pack.name.toLowerCase().includes(term) ||
+            pack.id.toLowerCase().includes(term)
+        );
+    }, [availablePacks, searchTerm]);
+
+    const handleTogglePack = (packId: string) => {
+        if (packId === '*') {
+            onChange(['*']);
+            return;
+        }
+        
+        if (selectedIds.includes('*')) {
+            onChange([packId]);
+            return;
+        }
+
+        if (selectedIds.includes(packId)) {
+            onChange(selectedIds.filter(id => id !== packId));
+        } else {
+            onChange([...selectedIds, packId]);
+        }
+    };
+
+    const handleSelectAll = () => {
+        onChange(availablePacks.map(p => p.id));
+    };
+
+    const handleSelectNone = () => {
+        onChange([]);
+    };
+
+    const handleSelectGlobal = () => {
+        onChange(['*']);
+    };
+
+    const selectedCount = selectedIds.includes('*') ? availablePacks.length : selectedIds.length;
+
+    return (
+        <div className="bg-slate-950 rounded-lg border border-slate-800 overflow-hidden">
+            <div className="p-3 border-b border-slate-800 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-400">📦 Available Packs</span>
+                    <div className="flex gap-2 text-xs">
+                        <button
+                            type="button"
+                            onClick={handleSelectAll}
+                            className="text-green-400 hover:text-green-300 transition-colors"
+                        >
+                            ✓ All
+                        </button>
+                        <span className="text-slate-600">|</span>
+                        <button
+                            type="button"
+                            onClick={handleSelectNone}
+                            className="text-sky-400 hover:text-sky-300 transition-colors"
+                        >
+                            ✗ None
+                        </button>
+                        <span className="text-slate-600">|</span>
+                        <button
+                            type="button"
+                            onClick={handleSelectGlobal}
+                            className="text-purple-400 hover:text-purple-300 transition-colors"
+                            title="Global access to all packs"
+                        >
+                            🌐 All Sites
+                        </button>
+                    </div>
+                </div>
+                <input
+                    type="text"
+                    placeholder="🔍 Search packs..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-purple-500 outline-none transition-colors"
+                />
+            </div>
+
+            <div className="max-h-48 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+                {filteredPacks.length === 0 ? (
+                    <div className="text-center py-4 text-slate-500 text-sm">
+                        {searchTerm ? 'No packs match your search' : 'No packs available'}
+                    </div>
+                ) : (
+                    filteredPacks.map(pack => (
+                        <label
+                            key={pack.id}
+                            className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                                selectedIds.includes(pack.id) 
+                                    ? 'bg-purple-900/20 hover:bg-purple-900/30' 
+                                    : 'hover:bg-slate-800'
+                            }`}
+                        >
+                            <input
+                                type="checkbox"
+                                checked={selectedIds.includes(pack.id)}
+                                onChange={() => handleTogglePack(pack.id)}
+                                className="w-4 h-4 rounded border-slate-600 text-purple-500 focus:ring-purple-500 focus:ring-offset-0"
+                            />
+                            <div className="flex-1 min-w-0">
+                                <div className="text-white text-sm font-medium truncate">
+                                    {pack.name}
+                                </div>
+                                <div className="text-slate-500 text-xs flex items-center gap-2">
+                                    <span className="font-mono">{pack.id}</span>
+                                    <span>•</span>
+                                    <span>v{pack.version}</span>
+                                    <span>•</span>
+                                    <span>{pack.language === 'en' ? '🇺🇸' : '🇻🇳'}</span>
+                                </div>
+                            </div>
+                            {selectedIds.includes(pack.id) && (
+                                <CheckIcon className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                            )}
+                        </label>
+                    ))
+                )}
+            </div>
+
+            <div className="p-2 border-t border-slate-800 text-xs text-slate-500 text-center bg-slate-900/50">
+                {selectedIds.includes('*') 
+                    ? '🌐 Global access (all current and future packs)'
+                    : `${selectedCount} / ${availablePacks.length} packs selected`
+                }
+            </div>
+        </div>
+    );
+};
+
 const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [availablePacks, setAvailablePacks] = useState<PromptPackManifest[]>([]);
+    const [isLoadingPacks, setIsLoadingPacks] = useState(false);
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [editForm, setEditForm] = useState<Partial<UserData>>({});
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Load users from Firestore
     const loadUsers = async () => {
         setIsLoading(true);
         try {
@@ -42,8 +189,21 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
         }
     };
 
+    const loadAvailablePacks = async () => {
+        setIsLoadingPacks(true);
+        try {
+            const { packs } = await RegistryService.fetchFullRegistry();
+            setAvailablePacks(packs);
+        } catch (error) {
+            console.error("Error loading packs:", error);
+        } finally {
+            setIsLoadingPacks(false);
+        }
+    };
+
     useEffect(() => {
         loadUsers();
+        loadAvailablePacks();
     }, []);
 
     // Filter users by search term
@@ -292,15 +452,25 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
 
                                                 {/* Allowed Packs */}
                                                 <div>
-                                                    <span className="text-slate-300 text-sm block mb-1">Allowed Packs</span>
-                                                    <input
-                                                        type="text"
-                                                        value={editForm.permissions?.allowedPackIds?.join(', ') || ''}
-                                                        onChange={(e) => handleUpdatePackAccess(e.target.value)}
-                                                        placeholder="* = tất cả, hoặc: pack-1, pack-2"
-                                                        className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white text-sm"
-                                                    />
-                                                    <p className="text-xs text-slate-600 mt-1">Dùng * để cho phép tất cả, hoặc liệt kê pack IDs cách nhau bằng dấu phẩy</p>
+                                                    <span className="text-slate-300 text-sm block mb-2">Allowed Packs</span>
+                                                    {isLoadingPacks ? (
+                                                        <div className="flex items-center justify-center py-4">
+                                                            <LoadingSpinnerIcon className="w-6 h-6 text-purple-500 animate-spin" />
+                                                            <span className="text-slate-500 text-sm ml-2">Đang tải packs...</span>
+                                                        </div>
+                                                    ) : (
+                                                        <PackPermissionSelector
+                                                            selectedIds={editForm.permissions?.allowedPackIds || []}
+                                                            onChange={(ids) => setEditForm({
+                                                                ...editForm,
+                                                                permissions: {
+                                                                    ...editForm.permissions!,
+                                                                    allowedPackIds: ids
+                                                                }
+                                                            })}
+                                                            availablePacks={availablePacks}
+                                                        />
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -318,10 +488,38 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
                                                     <RoleBadge role={user.role} />
                                                 </div>
                                                 <p className="text-sm text-slate-500">{user.email}</p>
-                                                <div className="flex gap-3 mt-1 text-xs text-slate-600">
-                                                    <span>💰 {user.credits || 0} credits</span>
-                                                    <span>📦 Batch: {user.permissions?.batchModeEnabled ? '✅' : '❌'}</span>
-                                                    <span>⚡ Max: {user.permissions?.maxConcurrent || 1}</span>
+                                                <div className="flex flex-wrap gap-2 mt-1 text-xs text-slate-600">
+                                                    <span className="bg-slate-800 px-2 py-0.5 rounded">💰 {user.credits || 0} credits</span>
+                                                    <span className={`px-2 py-0.5 rounded ${user.permissions?.batchModeEnabled ? 'bg-green-900/30 text-green-400' : 'bg-slate-800 text-slate-500'}`}>
+                                                        📦 Batch: {user.permissions?.batchModeEnabled ? '✅' : '❌'}
+                                                    </span>
+                                                    <span className="bg-slate-800 px-2 py-0.5 rounded">⚡ Max: {user.permissions?.maxConcurrent || 1}</span>
+                                                </div>
+                                                {/* Pack Access Display */}
+                                                <div className="flex flex-wrap gap-1 mt-2">
+                                                    {user.permissions?.allowedPackIds?.includes('*') ? (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-900/30 text-purple-400 text-xs rounded-full">
+                                                            🌐 All Packs
+                                                        </span>
+                                                    ) : user.permissions?.allowedPackIds && user.permissions.allowedPackIds.length > 0 ? (
+                                                        user.permissions.allowedPackIds.slice(0, 3).map(packId => {
+                                                            const pack = availablePacks.find(p => p.id === packId);
+                                                            return (
+                                                                <span 
+                                                                    key={packId}
+                                                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-800 text-slate-300 text-xs rounded-full"
+                                                                    title={pack?.description || packId}
+                                                                >
+                                                                    📦 {pack?.name || packId}
+                                                                </span>
+                                                            );
+                                                        })
+                                                    ) : (
+                                                        <span className="text-xs text-slate-500 italic">No packs assigned</span>
+                                                    )}
+                                                    {user.permissions?.allowedPackIds && user.permissions.allowedPackIds.length > 3 && (
+                                                        <span className="text-xs text-slate-500">+{user.permissions.allowedPackIds.length - 3} more</span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>

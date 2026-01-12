@@ -87,6 +87,41 @@ export const DEFAULT_ADMIN_PERMISSIONS: UserPermissions = {
     maxConcurrent: 5,             // 5 concurrent jobs
 };
 
+/**
+ * Helper function to check if user has access to a specific pack
+ */
+export function hasPackAccess(userPermissions: UserPermissions | undefined, packId: string): boolean {
+    if (!userPermissions) return false;
+    if (userPermissions.allowedPackIds.includes('*')) return true;
+    return userPermissions.allowedPackIds.includes(packId);
+}
+
+/**
+ * Get pack access summary for display
+ */
+export function getPackAccessSummary(
+    allowedPackIds: string[],
+    availablePacks: PromptPackManifest[]
+): { all: boolean; count: number; names: { id: string; name: string }[] } {
+    if (allowedPackIds.includes('*')) {
+        return {
+            all: true,
+            count: availablePacks.length,
+            names: availablePacks.map(p => ({ id: p.id, name: p.name }))
+        };
+    }
+    return {
+        all: false,
+        count: allowedPackIds.length,
+        names: allowedPackIds
+            .map(id => ({
+                id,
+                name: availablePacks.find(p => p.id === id)?.name || id
+            }))
+            .filter(item => item.name !== item.id)
+    };
+}
+
 // ========== END USER DATA MODEL ==========
 
 // ========== GRACEFUL ACCEPT MODE (Phase: Always Complete) ==========

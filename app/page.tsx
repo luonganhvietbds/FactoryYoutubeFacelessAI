@@ -955,14 +955,27 @@ export default function Home() {
                   onChange={(e) => handleApplyPack(e.target.value)}
                   className="bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-sky-400 font-bold focus:ring-sky-500 cursor-pointer hover:bg-slate-700 transition-colors appearance-none pr-8"
                   defaultValue=""
+                  disabled={filteredPacks.length === 0}
                 >
-                  <option value="" disabled>{language === 'vi' ? '--- Chọn Bộ AI Workforce ---' : '--- Select AI Workforce ---'}</option>
+                  <option value="" disabled>
+                    {filteredPacks.length === 0 
+                      ? (hasAllPackAccess 
+                          ? '⏳ Đang tải packs...' 
+                          : '🔒 Chưa có pack được cấp quyền')
+                      : (language === 'vi' ? '--- Chọn Bộ AI Workforce ---' : '--- Select AI Workforce ---')
+                    }
+                  </option>
                   {filteredPacks.map(pack => (
                     <option key={pack.id} value={pack.id}>{pack.name} (v{pack.version})</option>
                   ))}
                 </select>
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">▼</div>
+                <div className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 ${filteredPacks.length === 0 ? 'opacity-50' : ''}`}>▼</div>
               </div>
+              {!hasAllPackAccess && allowedPackIds.length > 0 && filteredPacks.length === 0 && (
+                <div className="text-xs text-amber-400 bg-amber-900/20 px-2 py-1 rounded">
+                  ⚠️ Liên hệ Admin để được cấp quyền packs
+                </div>
+              )}
 
               <div className="h-6 w-px bg-slate-700 mx-2"></div>
 
