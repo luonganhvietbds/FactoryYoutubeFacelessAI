@@ -778,6 +778,10 @@ export default function Home() {
 
   // --- SINGLE MODE HANDLERS ---
   const handleGenerate = async () => {
+    if (currentStep > 1 && !selectedPackId) {
+      addToast('error', 'Vui lòng chọn và kích hoạt Pack để sử dụng Steps 2-6');
+      return;
+    }
     if (!apiKey) { setError("Thiếu API Key."); return; }
     setIsLoading(true); setError(null);
     const promptContent = getPromptContentById(selectedPromptIds[currentStep], promptsLibrary);
@@ -1383,9 +1387,14 @@ export default function Home() {
                         stepConfig={step}
                         isLocked={isLocked}
                         isCompleted={workflowCompletedSteps.includes(step.id)}
-                        canRun={canRunStep(step.id, workflowCompletedSteps, isLocked)}
+                        canRun={canRunStep(step.id, workflowCompletedSteps, isLocked, selectedPackId)}
+                        selectedPackId={selectedPackId}
                         output={workflowStepOutputs[step.id]}
                         onRun={() => {
+                          if (step.id > 1 && !selectedPackId) {
+                            addToast('error', 'Vui lòng chọn và kích hoạt Pack để sử dụng Steps 2-6');
+                            return;
+                          }
                           setCurrentStep(step.id);
                           setViewingStep(step.id);
                           handleGenerate();

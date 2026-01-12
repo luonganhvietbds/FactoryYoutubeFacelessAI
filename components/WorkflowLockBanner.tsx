@@ -53,11 +53,12 @@ const WorkflowLockBanner: React.FC<WorkflowLockBannerProps> = ({
                     </div>
                     <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                            <span className="text-amber-400 font-bold text-lg">Vui lòng chọn Pack để bắt đầu</span>
+                            <span className="text-amber-400 font-bold text-lg">Chọn Pack để kích hoạt workflow</span>
                         </div>
                         <p className="text-amber-300/70 text-sm mb-3">
-                            Chọn một Pack từ danh sách bên dưới để kích hoạt workflow.
-                            Bạn sẽ cần hoàn thành tất cả các bước theo thứ tự.
+                            <span className="text-amber-200">📋 Step 1</span> có thể chạy ngay để tìm kiếm tin tức.
+                            <br />
+                            <span className="text-amber-200">📋 Steps 2-6</span> yêu cầu chọn Pack để kích hoạt.
                         </p>
                         <button
                             onClick={onSelectPack}
