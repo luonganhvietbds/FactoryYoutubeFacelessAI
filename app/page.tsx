@@ -20,6 +20,7 @@ import { queuePersistence } from '@/lib/queuePersistence'; // NEW: Persistence
 import { Language, LANGUAGE_CONFIGS, getLanguageConfig } from '@/lib/languageConfig';
 import { useAuth } from '@/lib/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { UserData } from '@/lib/types';
 
 import StepProgressBar from '@/components/StepProgressBar';
 import BatchResumeModal from '@/components/BatchResumeModal'; // NEW: Resume UI
@@ -81,18 +82,24 @@ export default function Home() {
   const [language, setLanguage] = useState<Language>('vi');
   const langConfig = getLanguageConfig(language);
 
-  // Filter packs by language
+  // Permission checks
+  const { currentUser, userData, isAdmin, logout, addToast } = useAuth();
+  const canUseBatchMode = userData?.permissions?.batchModeEnabled === true;
+  const hasAllPackAccess = userData?.permissions?.allowedPackIds?.includes('*');
+  const allowedPackIds = userData?.permissions?.allowedPackIds || [];
+
+  // Filter packs by language AND user permissions
   const filteredPacks = useMemo(() => {
     return availablePacks.filter(pack => {
-      // Check manifest for language field, default to 'vi' if not specified
       const packLang = (pack as any).language || 'vi';
-      return packLang === language;
+      const hasLangAccess = packLang === language;
+      const hasPackAccess = hasAllPackAccess || allowedPackIds.includes(pack.id);
+      return hasLangAccess && hasPackAccess;
     });
-  }, [availablePacks, language]);
+  }, [availablePacks, language, hasAllPackAccess, allowedPackIds]);
 
   // Admin & UI
   const [showAdmin, setShowAdmin] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [copiedResult, setCopiedResult] = useState(false);
 
   // --- BATCH MODE STATE ---
@@ -226,10 +233,31 @@ export default function Home() {
     alert(`Đã kích hoạt bộ Workforce: "${pack.name}"`);
   };
 
+  // Auth context provides isAdmin based on Firestore user role
+  const { currentUser, userData, isAdmin, logout, addToast } = useAuth();
+
+  const handleToggleBatchMode = () => {
+    if (!canUseBatchMode) {
+      addToast('error', 'Bạn không có quyền sử dụng Batch Mode. Liên hệ Admin để được cấp quyền.');
+      return;
+    }
+    setIsBatchMode(!isBatchMode);
+  };
+
   const handleAdminLogin = () => {
-    const pass = prompt("Nhập mật khẩu Admin (mặc định: admin123):");
-    if (pass === "admin123") { setIsAdmin(true); setShowAdmin(true); }
-    else { alert("Sai mật khẩu"); }
+    if (!currentUser) {
+      addToast('error', 'Vui lòng đăng nhập để truy cập Admin Dashboard');
+      return;
+    }
+    if (!userData) {
+      addToast('error', 'Đang tải thông tin tài khoản...');
+      return;
+    }
+    if (!isAdmin) {
+      addToast('error', 'Bạn không có quyền Admin. Liên hệ quản trị viên để được cấp quyền.');
+      return;
+    }
+    setShowAdmin(true);
   };
 
   // --- BATCH PROCESSING LOGIC ---
@@ -862,7 +890,7 @@ export default function Home() {
     setResumeState(null);
   };
 
-  const { currentUser, logout } = useAuth();
+  // Note: useAuth() is now called above at line ~230 to get isAdmin, userData, etc.
 
   const handleLogout = async () => {
     if (confirm('Bạn có chắc chắn muốn đăng xuất?')) {
@@ -891,6 +919,18 @@ export default function Home() {
               <div className="flex items-center gap-3 mt-1">
                 <p className="text-slate-400 text-sm">Xin chào, <span className="text-sky-400 font-medium">{currentUser?.displayName || currentUser?.email}</span></p>
                 <button onClick={handleLogout} className="text-xs text-red-400 hover:text-red-300 transition-colors">(Đăng xuất)</button>
+              </div>
+              {/* Permission Badges */}
+              <div className="flex items-center gap-2 mt-2">
+                {isAdmin && (
+                  <span className="px-2 py-0.5 bg-purple-600/80 text-white text-[10px] rounded-full font-medium">👑 Admin</span>
+                )}
+                {!canUseBatchMode && (
+                  <span className="px-2 py-0.5 bg-slate-700/80 text-slate-400 text-[10px] rounded-full font-medium" title="Batch Mode bị vô hiệu hóa">🔒 Single Mode Only</span>
+                )}
+                {!hasAllPackAccess && allowedPackIds.length > 0 && (
+                  <span className="px-2 py-0.5 bg-amber-700/80 text-amber-200 text-[10px] rounded-full font-medium" title={`Chỉ được truy cập: ${allowedPackIds.join(', ')}`}>📦 Limited Packs</span>
+                )}
               </div>
             </div>
 
@@ -930,7 +970,12 @@ export default function Home() {
               <div className="h-6 w-px bg-slate-700 mx-2"></div>
 
               <button onClick={handleResetPrompts} title="Reset về mặc định" className="text-slate-500 hover:text-red-400 p-2"><RefreshCwIcon className="h-5 w-5" /></button>
-              <button onClick={() => setIsBatchMode(!isBatchMode)} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${isBatchMode ? 'bg-amber-600 text-white shadow-lg' : 'bg-slate-800 text-slate-300 border border-slate-600'}`}>
+              <button
+                onClick={handleToggleBatchMode}
+                disabled={!canUseBatchMode}
+                className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${isBatchMode ? 'bg-amber-600 text-white shadow-lg' : canUseBatchMode ? 'bg-slate-800 text-slate-300 border border-slate-600' : 'bg-slate-800/50 text-slate-500 border border-slate-700 cursor-not-allowed opacity-50'}`}
+                title={!canUseBatchMode ? 'Bạn không có quyền sử dụng Batch Mode' : ''}
+              >
                 {isBatchMode ? '📦 Batch Mode' : '📦 Batch Mode'}
               </button>
               <button onClick={handleAdminLogin} className="text-slate-500 hover:text-sky-400 p-2"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M8 11h8" /><path d="M12 7v8" /></svg></button>
