@@ -5,6 +5,8 @@ import { STEPS_CONFIG } from '@/lib/constants';
 import { StepOutputs, BatchJob, SystemPromptData, PromptPackManifest, SceneWarning, JobQualityScore } from '@/lib/types';
 import { getPromptContentById } from '@/lib/prompt-utils';
 import { RegistryService } from '@/lib/prompt-registry/client-registry';
+import { canRunStep } from '@/lib/workflow-constants';
+import { useWorkflowState } from '@/lib/useWorkflowState';
 import {
   getNewsAndEvents,
   createOutlineBatch,
@@ -16,15 +18,17 @@ import {
   createMetadata
 } from '@/services/aiService';
 import { apiKeyManager, ApiKeyInfo, KeyManagerState } from '@/lib/apiKeyManager';
-import { queuePersistence } from '@/lib/queuePersistence'; // NEW: Persistence
+import { queuePersistence } from '@/lib/queuePersistence';
 import { Language, LANGUAGE_CONFIGS, getLanguageConfig } from '@/lib/languageConfig';
 import { useAuth } from '@/lib/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import WorkflowLockBanner from '@/components/WorkflowLockBanner';
+import StepCard from '@/components/StepCard';
 import { UserData } from '@/lib/types';
 
 import StepProgressBar from '@/components/StepProgressBar';
-import BatchResumeModal from '@/components/BatchResumeModal'; // NEW: Resume UI
-import QualityReport from '@/components/QualityReport'; // NEW: Quality Report
+import BatchResumeModal from '@/components/BatchResumeModal';
+import QualityReport from '@/components/QualityReport';
 import WandIcon from '@/components/icons/WandIcon';
 import LoadingSpinnerIcon from '@/components/icons/LoadingSpinnerIcon';
 import CopyIcon from '@/components/icons/CopyIcon';
@@ -59,8 +63,6 @@ export default function Home() {
   // --- STATE ---
   const [currentStep, setCurrentStep] = useState(1);
   const [viewingStep, setViewingStep] = useState(1);
-  const [stepOutputs, setStepOutputs] = useState<StepOutputs>({});
-  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +89,23 @@ export default function Home() {
   const canUseBatchMode = userData?.permissions?.batchModeEnabled === true;
   const hasAllPackAccess = userData?.permissions?.allowedPackIds?.includes('*');
   const allowedPackIds = userData?.permissions?.allowedPackIds || [];
+
+  // Workflow State (NEW)
+  const [selectedPackId, setSelectedPackIdState] = useState<string | null>(null);
+  const {
+    isLocked,
+    completedSteps: workflowCompletedSteps,
+    stepOutputs: workflowStepOutputs,
+    resetWorkflow,
+    completeStep,
+    unlockWorkflow
+  } = useWorkflowState(selectedPackId);
+
+  // Computed
+  const selectedPack = useMemo(() => 
+    availablePacks.find(p => p.id === selectedPackId),
+    [selectedPackId, availablePacks]
+  );
 
   // Filter packs by language AND user permissions
   const filteredPacks = useMemo(() => {
@@ -139,8 +158,35 @@ export default function Home() {
     return unsubscribe;
   }, []);
 
+  // Auto-unlock workflow when user has pack access
+  useEffect(() => {
+    if (userData && !isLocked && selectedPackId === null) {
+      const allowedIds = userData.permissions?.allowedPackIds || [];
+      if (allowedIds.length > 0 || allowedIds.includes('*')) {
+        let defaultPackId: string | null = null;
+        
+        if (allowedIds.includes('*')) {
+          defaultPackId = availablePacks[0]?.id || null;
+        } else if (userData.permissions?.defaultPackId && allowedIds.includes(userData.permissions.defaultPackId)) {
+          defaultPackId = userData.permissions.defaultPackId;
+        } else {
+          defaultPackId = allowedIds[0] || null;
+        }
+        
+        if (defaultPackId) {
+          setSelectedPackIdState(defaultPackId);
+          unlockWorkflow(defaultPackId);
+          addToast('success', `Đã tự động kích hoạt Pack mặc định`);
+        }
+      }
+    }
+  }, [userData, isLocked, selectedPackId, availablePacks, unlockWorkflow, addToast]);
+
   const [editableInput, setEditableInput] = useState('');
   const [updateSuccessMessage, setUpdateSuccessMessage] = useState('');
+  
+  // Local state for editable inputs (separate from workflow outputs)
+  const [localStepOutputs, setLocalStepOutputs] = useState<StepOutputs>({});
 
   // --- INITIALIZATION ---
   useEffect(() => {
@@ -215,6 +261,13 @@ export default function Home() {
 
   const handleApplyPack = (packId: string) => {
     if (!packId) return;
+    
+    // Check user permissions
+    if (!hasAllPackAccess && !allowedPackIds.includes(packId)) {
+      addToast('error', 'Bạn không có quyền truy cập Pack này');
+      return;
+    }
+    
     const pack = availablePacks.find(p => p.id === packId);
     if (!pack) return;
 
@@ -222,7 +275,6 @@ export default function Home() {
 
     // Update steps based on Pack Manifest
     pack.prompts.forEach(pAsset => {
-      // Verify prompt exists in library
       const exists = promptsLibrary.find(libP => libP.id === pAsset.id);
       if (exists) {
         newSelection[pAsset.stepId] = pAsset.id;
@@ -230,7 +282,9 @@ export default function Home() {
     });
 
     setSelectedPromptIds(newSelection);
-    alert(`Đã kích hoạt bộ Workforce: "${pack.name}"`);
+    setSelectedPackIdState(packId);
+    resetWorkflow(packId);
+    addToast('success', `Đã kích hoạt Pack: "${pack.name}". Vui lòng chạy lại từ Step 1.`);
   };
 
   const handleToggleBatchMode = () => {
@@ -779,8 +833,7 @@ export default function Home() {
         else if (currentStep === 6) result = await createMetadata(apiKey, input, promptContent);
       }
       if (result) {
-        setStepOutputs(prev => ({ ...prev, [currentStep]: result as string }));
-        if (!completedSteps.includes(currentStep)) setCompletedSteps(prev => [...prev, currentStep]);
+        completeStep(currentStep, result as string);
         if (currentStep < 6) { setCurrentStep(currentStep + 1); setViewingStep(currentStep + 1); }
       }
     } catch (e: any) { setError(e.message); }
@@ -795,18 +848,18 @@ export default function Home() {
   const getInputForStep = useCallback((stepId: number) => {
     switch (stepId) {
       case 1: return topicKeyword;
-      case 2: return stepOutputs[1];
-      case 3: return stepOutputs[2];
-      case 4: case 5: case 6: return stepOutputs[3];
+      case 2: return workflowStepOutputs[1];
+      case 3: return workflowStepOutputs[2];
+      case 4: case 5: case 6: return workflowStepOutputs[3];
       default: return null;
     }
-  }, [stepOutputs, topicKeyword]);
+  }, [workflowStepOutputs, topicKeyword]);
 
-  useEffect(() => { setEditableInput(getInputForStep(viewingStep) ?? ''); setUpdateSuccessMessage(''); }, [viewingStep, stepOutputs, getInputForStep]);
+  useEffect(() => { setEditableInput(getInputForStep(viewingStep) ?? ''); setUpdateSuccessMessage(''); }, [viewingStep, workflowStepOutputs, localStepOutputs, getInputForStep]);
 
   const handleUpdateInput = () => {
     const src = INPUT_SOURCE_MAP[viewingStep];
-    if (src) { setStepOutputs(prev => ({ ...prev, [src]: editableInput })); setUpdateSuccessMessage('Cập nhật thành công!'); setTimeout(() => setUpdateSuccessMessage(''), 3000); }
+    if (src) { setLocalStepOutputs(prev => ({ ...prev, [src]: editableInput })); setUpdateSuccessMessage('Cập nhật thành công!'); setTimeout(() => setUpdateSuccessMessage(''), 3000); }
   };
 
   // --- DOWNLOAD LOGIC ---
@@ -821,8 +874,8 @@ export default function Home() {
 
     // Add all existing outputs to zip
     STEPS_CONFIG.forEach(step => {
-      if (stepOutputs[step.id]) {
-        folder?.file(`step-${step.id}-${step.id === 1 ? 'research' : step.id === 2 ? 'outline' : step.id === 3 ? 'script' : step.id === 4 ? 'prompts' : step.id === 5 ? 'voice' : 'meta'}.txt`, stepOutputs[step.id]!);
+      if (workflowStepOutputs[step.id]) {
+        folder?.file(`step-${step.id}-${step.id === 1 ? 'research' : step.id === 2 ? 'outline' : step.id === 3 ? 'script' : step.id === 4 ? 'prompts' : step.id === 5 ? 'voice' : 'meta'}.txt`, workflowStepOutputs[step.id]!);
       }
     });
 
@@ -831,7 +884,7 @@ export default function Home() {
   };
 
   const handleCopyResult = () => {
-    if (stepOutputs[viewingStep]) { navigator.clipboard.writeText(stepOutputs[viewingStep]!); setCopiedResult(true); setTimeout(() => setCopiedResult(false), 2000); }
+    if (workflowStepOutputs[viewingStep]) { navigator.clipboard.writeText(workflowStepOutputs[viewingStep]!); setCopiedResult(true); setTimeout(() => setCopiedResult(false), 2000); }
   };
 
   const renderSplitPromptView = (output: string) => {
@@ -849,7 +902,7 @@ export default function Home() {
 
     const handleUpdate = (type: 'image' | 'video', val: string[]) => {
       const newData = { ...originalJson, imagePrompts: type === 'image' ? val : imagePrompts, videoPrompts: type === 'video' ? val : videoPrompts };
-      setStepOutputs(prev => ({ ...prev, 4: JSON.stringify(newData, null, 2) }));
+      setLocalStepOutputs(prev => ({ ...prev, 4: JSON.stringify(newData, null, 2) }));
     };
 
     return (
@@ -952,10 +1005,10 @@ export default function Home() {
               {/* PACK SELECTOR */}
               <div className="relative group">
                 <select
+                  id="pack-selector"
+                  value={selectedPackId || ''}
                   onChange={(e) => handleApplyPack(e.target.value)}
                   className="bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-sky-400 font-bold focus:ring-sky-500 cursor-pointer hover:bg-slate-700 transition-colors appearance-none pr-8"
-                  defaultValue=""
-                  disabled={filteredPacks.length === 0}
                 >
                   <option value="" disabled>
                     {filteredPacks.length === 0 
@@ -998,6 +1051,16 @@ export default function Home() {
               </button>
             </div>
           </header>
+
+          {/* Workflow Lock Banner */}
+          <WorkflowLockBanner
+            isLocked={isLocked}
+            hasPackAccess={(allowedPackIds.length > 0) || (hasAllPackAccess === true)}
+            selectedPackId={selectedPackId}
+            selectedPackName={selectedPack?.name || null}
+            completedSteps={workflowCompletedSteps}
+            onSelectPack={() => document.getElementById('pack-selector')?.focus()}
+          />
 
           {/* API KEY */}
           <div className="max-w-3xl mx-auto mb-6 p-3 bg-slate-800 rounded border border-slate-700 flex gap-4 items-center">
@@ -1306,7 +1369,38 @@ export default function Home() {
           ) : (
             /* SINGLE MODE UI */
             <>
-              <div className="mb-10"><StepProgressBar steps={STEPS_CONFIG} currentStep={viewingStep} completedSteps={completedSteps} onStepClick={setViewingStep} /></div>
+              {/* Workflow Steps Grid - NEW */}
+              {!isLocked && selectedPackId && (
+                <div className="mb-8">
+                  <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <span className="text-sky-400">📋</span> Workflow Steps
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {STEPS_CONFIG.map(step => (
+                      <StepCard
+                        key={step.id}
+                        stepId={step.id}
+                        stepConfig={step}
+                        isLocked={isLocked}
+                        isCompleted={workflowCompletedSteps.includes(step.id)}
+                        canRun={canRunStep(step.id, workflowCompletedSteps, isLocked)}
+                        output={workflowStepOutputs[step.id]}
+                        onRun={() => {
+                          setCurrentStep(step.id);
+                          setViewingStep(step.id);
+                          handleGenerate();
+                        }}
+                        onView={() => {
+                          setViewingStep(step.id);
+                          setCurrentStep(step.id);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-10"><StepProgressBar steps={STEPS_CONFIG} currentStep={viewingStep} completedSteps={workflowCompletedSteps} onStepClick={setViewingStep} /></div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex flex-col h-[750px]">
                   <h2 className="text-2xl font-bold mb-1 text-sky-400">{activeStepConfig.title}</h2>
@@ -1380,12 +1474,12 @@ export default function Home() {
                   <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-700">
                     <h2 className="text-lg font-bold text-white">Result</h2>
                     <div className="flex gap-2">
-                      {stepOutputs[viewingStep] && (
-                        <button onClick={() => handleDownloadSingle(viewingStep, stepOutputs[viewingStep]!)} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 transition-colors" title="Download .txt">
+                      {workflowStepOutputs[viewingStep] && (
+                        <button onClick={() => handleDownloadSingle(viewingStep, workflowStepOutputs[viewingStep]!)} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 transition-colors" title="Download .txt">
                           <DownloadIcon className="h-4 w-4" />
                         </button>
                       )}
-                      {stepOutputs[viewingStep] && <button onClick={handleCopyResult} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 transition-colors"><CopyIcon className="h-4 w-4" /></button>}
+                      {workflowStepOutputs[viewingStep] && <button onClick={handleCopyResult} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 transition-colors"><CopyIcon className="h-4 w-4" /></button>}
                     </div>
                   </div>
                   <div className={`bg-slate-900 rounded p-4 flex-grow overflow-auto border border-slate-700 relative ${viewingStep === 4 ? 'p-0' : ''}`}>
@@ -1405,7 +1499,7 @@ export default function Home() {
                     )}
 
                     {isLoading && viewingStep === currentStep && !progress ? <LoadingSpinnerIcon className="h-10 w-10 animate-spin text-sky-500 m-auto" /> :
-                      (viewingStep === 4 && stepOutputs[viewingStep] ? renderSplitPromptView(stepOutputs[viewingStep]!) : <div className="whitespace-pre-wrap text-sm text-slate-200">{stepOutputs[viewingStep]}</div>)
+                      (viewingStep === 4 && workflowStepOutputs[viewingStep] ? renderSplitPromptView(workflowStepOutputs[viewingStep]!) : <div className="whitespace-pre-wrap text-sm text-slate-200">{workflowStepOutputs[viewingStep]}</div>)
                     }
                   </div>
                 </div>

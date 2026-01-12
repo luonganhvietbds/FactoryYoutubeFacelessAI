@@ -50,9 +50,10 @@ export interface UserProfile {
  * User permissions for feature access
  */
 export interface UserPermissions {
-    allowedPackIds: string[];    // Which prompt packs can access ('*' = all)
-    batchModeEnabled: boolean;    // Can use batch mode
-    maxConcurrent: number;        // Max concurrent batch jobs (default: 3)
+    allowedPackIds: string[];        // Which prompt packs can access ('*' = all)
+    defaultPackId?: string;          // NEW: Auto-assign default pack on login
+    batchModeEnabled: boolean;       // Can use batch mode
+    maxConcurrent: number;           // Max concurrent batch jobs (default: 3)
 }
 
 /**
@@ -74,6 +75,7 @@ export interface UserData {
  */
 export const DEFAULT_MEMBER_PERMISSIONS: UserPermissions = {
     allowedPackIds: [],           // No packs by default
+    defaultPackId: undefined,     // No default pack - must be assigned
     batchModeEnabled: false,      // Batch mode disabled by default
     maxConcurrent: 1,             // Only 1 concurrent job
 };
@@ -83,9 +85,36 @@ export const DEFAULT_MEMBER_PERMISSIONS: UserPermissions = {
  */
 export const DEFAULT_ADMIN_PERMISSIONS: UserPermissions = {
     allowedPackIds: ['*'],        // All packs
+    defaultPackId: undefined,     // Admin can access all
     batchModeEnabled: true,       // Batch mode enabled
     maxConcurrent: 5,             // 5 concurrent jobs
 };
+
+// ========== WORKFLOW STATE ==========
+
+/**
+ * Workflow state for tracking user progress
+ */
+export interface WorkflowState {
+    isLocked: boolean;            // Whether workflow is locked (no pack selected)
+    selectedPackId: string | null; // Currently selected pack
+    completedSteps: number[];      // List of completed step IDs
+    stepOutputs: StepOutputs;      // Outputs from each step
+    startedAt: string | null;      // When workflow started
+    completedAt: string | null;    // When workflow completed
+}
+
+/**
+ * Workflow configuration
+ */
+export interface WorkflowConfig {
+    stepsInOrder: number[];
+    allowSkipSteps: boolean;
+    requireStep1First: boolean;
+    autoResetOnPackChange: boolean;
+}
+
+// ========== END WORKFLOW STATE ==========
 
 /**
  * Helper function to check if user has access to a specific pack
