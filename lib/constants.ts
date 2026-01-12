@@ -4,10 +4,10 @@ import { StepConfig } from './types';
 export const STEPS_CONFIG: StepConfig[] = [
     {
         id: 1,
-        title: 'Bước 1: Tổng Hợp Tin Tức & Sự Kiện',
-        description: 'Sử dụng Google Search để tìm kiếm thông tin mới nhất, nóng hổi nhất về chủ đề bạn yêu cầu và tổng hợp lại thành danh sách tin tức uy tín.',
+        title: 'Bước 1: Tạo gợi ý kịch bản',
+        description: 'Từ chủ đề bạn cung cấp, AI sẽ tìm kiếm và tổng hợp thông tin để tạo ra các gợi ý kịch bản sáng tạo, phù hợp với xu hướng hiện tại.',
         defaultPromptId: 'S1_CRIME_DOC_BD',
-        buttonText: 'Tìm Tin Tức & Tổng Hợp'
+        buttonText: 'Tạo gợi ý kịch bản'
     },
     {
         id: 2,
