@@ -22,7 +22,7 @@ interface PackPermissionSelectorProps {
     availablePacks: PromptPackManifest[];
 }
 
-const PackPermissionSelectorPacks: Prompt: React.FC<PackPermissionSelectorProps> = ({
+const PackPermissionSelector: React.FC<PackPermissionSelectorProps> = ({
     selectedIds,
     onChange,
     availablePacks
