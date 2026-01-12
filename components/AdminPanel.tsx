@@ -14,6 +14,7 @@ import CheckIcon from './icons/CheckIcon';
 import LoadingSpinnerIcon from './icons/LoadingSpinnerIcon';
 import LogOutIcon from './icons/LogOutIcon';
 import ModelManager from './ModelManager';
+import UserManagement from './UserManagement';
 
 interface AdminPanelProps {
     prompts: SystemPromptData[];
@@ -27,7 +28,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
     // --- STATE ---
     const [packs, setPacks] = useState<PromptPackManifest[]>([]);
     const [isLoadingPacks, setIsLoadingPacks] = useState(true);
-    const [activeTab, setActiveTab] = useState<'packs' | 'prompts' | 'cloud' | 'models'>('packs');
+    const [activeTab, setActiveTab] = useState<'packs' | 'prompts' | 'cloud' | 'models' | 'users'>('packs');
     const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
 
     // Edit State
@@ -666,6 +667,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                             isActive={activeTab === 'models'}
                             onClick={() => setActiveTab('models')}
                         />
+                        <SidebarItem
+                            id="users"
+                            label="User Management"
+                            icon="👥"
+                            isActive={activeTab === 'users'}
+                            onClick={() => setActiveTab('users')}
+                        />
 
                         <div className="border-t border-slate-800/50 my-4 mx-2"></div>
 
@@ -1002,6 +1010,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ prompts, onUpdatePrompts, onClo
                             {/* --- TAB: MODELS --- */}
                             {activeTab === 'models' && (
                                 <ModelManager />
+                            )}
+
+                            {/* --- TAB: USERS --- */}
+                            {activeTab === 'users' && (
+                                <UserManagement />
                             )}
 
                         </div>

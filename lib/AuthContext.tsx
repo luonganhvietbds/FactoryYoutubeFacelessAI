@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import {
     User,
     onAuthStateChanged,
@@ -12,8 +12,10 @@ import {
     updateProfile,
     verifyBeforeUpdateEmail,
 } from 'firebase/auth';
-import { auth } from './firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
 import { getFirebaseErrorMessage } from './firebase-auth-helper';
+import { UserData, DEFAULT_MEMBER_PERMISSIONS, DEFAULT_ADMIN_PERMISSIONS } from './types';
 
 interface ToastMessage {
     id: string;
@@ -23,13 +25,16 @@ interface ToastMessage {
 
 interface AuthContextType {
     currentUser: User | null;
+    userData: UserData | null;
     loading: boolean;
+    isAdmin: boolean;
     login: (email: string, password: string) => Promise<User>;
     register: (email: string, password: string, displayName: string) => Promise<User>;
     logout: () => Promise<void>;
     resetPassword: (email: string) => Promise<void>;
     resendVerificationEmail: () => Promise<void>;
     updateUserEmail: (newEmail: string) => Promise<void>;
+    refreshUserData: () => Promise<void>;
     addToast: (type: 'success' | 'error' | 'info', message: string) => void;
     toasts: ToastMessage[];
     removeToast: (id: string) => void;
@@ -55,8 +60,12 @@ interface AuthProviderProps {
 
 export function AuthProvider({ children }: AuthProviderProps) {
     const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [userData, setUserData] = useState<UserData | null>(null);
     const [loading, setLoading] = useState(true);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+    // Computed property: is current user an admin?
+    const isAdmin = userData?.role === 'admin';
 
     function addToast(type: 'success' | 'error' | 'info', message: string) {
         const id = generateToastId();
@@ -67,6 +76,51 @@ export function AuthProvider({ children }: AuthProviderProps) {
     function removeToast(id: string) {
         setToasts((prev) => prev.filter((t) => t.id !== id));
     }
+
+    /**
+     * Fetch or auto-create user document in Firestore
+     */
+    const fetchOrCreateUserData = useCallback(async (user: User): Promise<UserData | null> => {
+        try {
+            const userRef = doc(db, "users", user.uid);
+            const userSnap = await getDoc(userRef);
+
+            if (userSnap.exists()) {
+                // User document exists
+                const data = userSnap.data() as UserData;
+                console.log("📋 User data loaded:", data.email, "Role:", data.role);
+                return data;
+            } else {
+                // Auto-migrate: Create new user document for existing Firebase Auth user
+                console.log("🔄 Auto-migrating user:", user.email);
+                const newUserData: UserData = {
+                    uid: user.uid,
+                    email: user.email || '',
+                    displayName: user.displayName || '',
+                    role: 'member',
+                    credits: 100,
+                    permissions: { ...DEFAULT_MEMBER_PERMISSIONS },
+                    createdAt: new Date().toISOString(),
+                };
+                await setDoc(userRef, newUserData);
+                console.log("✅ User document auto-created for:", user.email);
+                return newUserData;
+            }
+        } catch (error) {
+            console.error("❌ Error fetching/creating user data:", error);
+            return null;
+        }
+    }, []);
+
+    /**
+     * Refresh user data from Firestore
+     */
+    const refreshUserData = useCallback(async () => {
+        if (currentUser) {
+            const data = await fetchOrCreateUserData(currentUser);
+            setUserData(data);
+        }
+    }, [currentUser, fetchOrCreateUserData]);
 
     async function login(email: string, password: string): Promise<User> {
         try {
@@ -83,7 +137,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const user = userCredential.user;
 
+            // Update profile with display name
             await updateProfile(user, { displayName });
+
+            // Create user document in Firestore
+            const userRef = doc(db, "users", user.uid);
+            const newUserData: UserData = {
+                uid: user.uid,
+                email: email,
+                displayName: displayName,
+                role: 'member',
+                credits: 100,
+                permissions: { ...DEFAULT_MEMBER_PERMISSIONS },
+                createdAt: new Date().toISOString(),
+            };
+            await setDoc(userRef, newUserData);
+            console.log("✅ User document created for new registration:", email);
+
+            // Send email verification
             await sendEmailVerification(user);
             await signOut(auth);
 
@@ -96,6 +167,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     async function logout(): Promise<void> {
         await signOut(auth);
+        setUserData(null);
     }
 
     async function resetPassword(email: string): Promise<void> {
@@ -132,23 +204,35 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
             setCurrentUser(user);
+
+            if (user) {
+                // Fetch or auto-create user data from Firestore
+                const data = await fetchOrCreateUserData(user);
+                setUserData(data);
+            } else {
+                setUserData(null);
+            }
+
             setLoading(false);
         });
 
         return unsubscribe;
-    }, []);
+    }, [fetchOrCreateUserData]);
 
     const value: AuthContextType = {
         currentUser,
+        userData,
         loading,
+        isAdmin,
         login,
         register,
         logout,
         resetPassword,
         resendVerificationEmail,
         updateUserEmail,
+        refreshUserData,
         addToast,
         toasts,
         removeToast,
@@ -170,13 +254,12 @@ function ToastContainer({ toasts, onRemove }: { toasts: ToastMessage[]; onRemove
             {toasts.map((toast) => (
                 <div
                     key={toast.id}
-                    className={`px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in ${
-                        toast.type === 'success'
+                    className={`px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in ${toast.type === 'success'
                             ? 'bg-green-600 text-white'
                             : toast.type === 'error'
-                            ? 'bg-red-600 text-white'
-                            : 'bg-blue-600 text-white'
-                    }`}
+                                ? 'bg-red-600 text-white'
+                                : 'bg-blue-600 text-white'
+                        }`}
                 >
                     <span className="flex-1">{toast.message}</span>
                     <button

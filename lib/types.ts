@@ -44,6 +44,51 @@ export interface UserProfile {
     isAdmin: boolean;
 }
 
+// ========== USER DATA MODEL (Admin Authentication System) ==========
+
+/**
+ * User permissions for feature access
+ */
+export interface UserPermissions {
+    allowedPackIds: string[];    // Which prompt packs can access ('*' = all)
+    batchModeEnabled: boolean;    // Can use batch mode
+    maxConcurrent: number;        // Max concurrent batch jobs (default: 3)
+}
+
+/**
+ * User data stored in Firestore 'users' collection
+ */
+export interface UserData {
+    uid: string;
+    email: string;
+    displayName?: string;
+    role: 'admin' | 'member';
+    credits: number;
+    permissions: UserPermissions;
+    createdAt: string;
+    updatedAt?: string;
+}
+
+/**
+ * Default permissions for new members
+ */
+export const DEFAULT_MEMBER_PERMISSIONS: UserPermissions = {
+    allowedPackIds: [],           // No packs by default
+    batchModeEnabled: false,      // Batch mode disabled by default
+    maxConcurrent: 1,             // Only 1 concurrent job
+};
+
+/**
+ * Default permissions for admins
+ */
+export const DEFAULT_ADMIN_PERMISSIONS: UserPermissions = {
+    allowedPackIds: ['*'],        // All packs
+    batchModeEnabled: true,       // Batch mode enabled
+    maxConcurrent: 5,             // 5 concurrent jobs
+};
+
+// ========== END USER DATA MODEL ==========
+
 // ========== GRACEFUL ACCEPT MODE (Phase: Always Complete) ==========
 
 /**
