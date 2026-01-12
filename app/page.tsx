@@ -233,9 +233,6 @@ export default function Home() {
     alert(`Đã kích hoạt bộ Workforce: "${pack.name}"`);
   };
 
-  // Auth context provides isAdmin based on Firestore user role
-  const { currentUser, userData, isAdmin, logout, addToast } = useAuth();
-
   const handleToggleBatchMode = () => {
     if (!canUseBatchMode) {
       addToast('error', 'Bạn không có quyền sử dụng Batch Mode. Liên hệ Admin để được cấp quyền.');
