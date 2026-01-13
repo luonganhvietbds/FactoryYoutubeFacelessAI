@@ -212,5 +212,73 @@ export interface BatchJob {
         script?: string;
     };
     lastUpdated?: number;         // Timestamp for persistence check
+
+    // Phase: Auto-Fix System
+    fixedScenes?: number[];       // IDs of scenes AI successfully fixed
+    stillInvalid?: number[];      // IDs of scenes AI couldn't fix
 }
+
+// ========== AUTO-FIX SCENE VALIDATION SYSTEM ==========
+
+export interface SceneData {
+    sceneNum: number;
+    title: string;
+    visual: string;
+    voiceover: string;
+    wordCount: number;
+}
+
+export interface ValidationResult {
+    sceneData: SceneData | null;
+    isValid: boolean;
+    issues: string[];
+    suggestions: string[];
+}
+
+export interface ComprehensiveResult {
+    totalExpected: number;
+    totalFound: number;
+    validScenes: SceneData[];
+    invalidScenes: ValidationResult[];
+    missingScenes: number[];
+    completionRate: number;
+    allScenesContent: string;
+}
+
+export interface FixedScene {
+    sceneNum: number;
+    originalContent: string;
+    fixedContent: string;
+    fixReasons: string[];
+    isValidAfterFix: boolean;
+}
+
+export interface AutoFixMetrics {
+    totalFixed: number;
+    stillInvalid: number[];
+    recoveryAttempts: number;
+    completionRate: number;
+    fixReasons: string[];
+}
+
+export interface EnhancedOutlineBatchResult {
+    content: string;
+    warnings: SceneWarning[];
+    fixedScenes: number[];
+    stillInvalid: number[];
+    qualityMetrics: AutoFixMetrics;
+    validationDetails: ComprehensiveResult;
+}
+
+export interface AutoFixEvent {
+    timestamp: string;
+    batchIndex: number;
+    attempt: number;
+    fixedScenes: number[];
+    stillInvalid: number[];
+    completionRate: number;
+}
+
+// ========== END AUTO-FIX SYSTEM ==========
+
 

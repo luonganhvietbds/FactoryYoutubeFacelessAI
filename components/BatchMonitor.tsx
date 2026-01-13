@@ -14,6 +14,9 @@ interface BatchMonitorProps {
     activeKeyCount: number;
     totalApiCalls: number;
     startTime?: number;
+    autoFixedCount?: number;
+    stillInvalidCount?: number;
+    completionRate?: number;
 }
 
 const BatchMonitor: React.FC<BatchMonitorProps> = ({
@@ -26,7 +29,10 @@ const BatchMonitor: React.FC<BatchMonitorProps> = ({
     sceneCount,
     activeKeyCount,
     totalApiCalls,
-    startTime
+    startTime,
+    autoFixedCount = 0,
+    stillInvalidCount = 0,
+    completionRate = 100
 }) => {
     // Calculate ETA
     const { formattedTime: eta } = estimateProcessingTime(
@@ -118,6 +124,29 @@ const BatchMonitor: React.FC<BatchMonitorProps> = ({
                     <div className="text-purple-600">Đã chạy</div>
                 </div>
             </div>
+
+            {/* Auto-Fix Status */}
+            {(autoFixedCount > 0 || stillInvalidCount > 0) && (
+                <div className="bg-slate-800 p-3 rounded border border-slate-700 space-y-2">
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        🔧 Auto-Fix Status
+                    </div>
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                        <div className="bg-emerald-900/30 p-2 rounded border border-emerald-800">
+                            <div className="text-emerald-400 font-bold text-lg">{autoFixedCount}</div>
+                            <div className="text-xs text-emerald-600">Đã tự sửa</div>
+                        </div>
+                        <div className="bg-amber-900/30 p-2 rounded border border-amber-800">
+                            <div className="text-amber-400 font-bold text-lg">{stillInvalidCount}</div>
+                            <div className="text-xs text-amber-600">Cần attention</div>
+                        </div>
+                        <div className={`p-2 rounded border ${completionRate >= 100 ? 'bg-green-900/30 border-green-800' : 'bg-yellow-900/30 border-yellow-800'}`}>
+                            <div className={`font-bold text-lg ${completionRate >= 100 ? 'text-green-400' : 'text-yellow-400'}`}>{completionRate}%</div>
+                            <div className="text-xs text-slate-500">Hoàn thành</div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ETA */}
             <div className="flex justify-between items-center bg-slate-800 p-2 rounded">

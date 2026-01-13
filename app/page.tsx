@@ -10,6 +10,7 @@ import { useWorkflowState } from '@/lib/useWorkflowState';
 import {
   getNewsAndEvents,
   createOutlineBatch,
+  createOutlineBatchWithAutoFix,
   createScriptBatch,
   splitScriptIntoChunks,
   generatePromptsBatch,
@@ -550,11 +551,28 @@ export default function Home() {
       for (let b = startBatch; b < totalOutlineBatches; b++) {
         await updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches}`, { completedBatches: b });
 
-        const result = await createOutlineBatch(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchTargetWords, batchWordTolerance, (r, a) => updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches} (Retry ${a}: ${r})`));
+        const result = await createOutlineBatchWithAutoFix(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchTargetWords, batchWordTolerance, (r, a) => updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches} (Retry ${a}: ${r})`));
 
         if (result.content === "END_OF_OUTLINE") break;
         fullOutline += "\n" + result.content;
         allWarnings.push(...result.warnings);
+
+        if (result.fixedScenes.length > 0) {
+          console.log(`✅ Auto-fixed scenes: ${result.fixedScenes.join(', ')}`);
+        }
+
+        if (result.stillInvalid.length > 0) {
+          console.warn(`⚠️ Still invalid after auto-fix: ${result.stillInvalid.join(', ')}`);
+          result.stillInvalid.forEach(sceneNum => {
+            allWarnings.push({
+              sceneNum,
+              actual: 0,
+              target: batchTargetWords,
+              tolerance: batchWordTolerance,
+              diff: -batchTargetWords,
+            });
+          });
+        }
 
         // CHECKPOINT: Save partial outline
         await updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches} (Saved)`, {
@@ -842,9 +860,16 @@ export default function Home() {
             setProgress({
               current: b + 1, total: totalBatches, message: `Creating Outline Batch ${b + 1}/${totalBatches}...`
             });
-            const result = await createOutlineBatch(apiKey, input, promptContent, fullOutline, b, sceneCount, targetWords, tolerance);
-            if (result.content === "END_OF_OUTLINE") break;
-            fullOutline += "\n" + result.content;
+            const outlineResult = await createOutlineBatchWithAutoFix(apiKey, input, promptContent, fullOutline, b, sceneCount, targetWords, tolerance);
+            if (outlineResult.content === "END_OF_OUTLINE") break;
+            fullOutline += "\n" + outlineResult.content;
+
+            if (outlineResult.fixedScenes.length > 0) {
+              console.log(`✅ Single-mode Auto-fixed scenes: ${outlineResult.fixedScenes.join(', ')}`);
+            }
+            if (outlineResult.stillInvalid.length > 0) {
+              console.warn(`⚠️ Single-mode Still invalid: ${outlineResult.stillInvalid.join(', ')}`);
+            }
           }
           result = fullOutline.trim();
         } else if (currentStep === 3) {

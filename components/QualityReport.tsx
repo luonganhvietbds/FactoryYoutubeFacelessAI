@@ -3,12 +3,21 @@
 import React from 'react';
 import { SceneWarning, JobQualityScore } from '@/lib/types';
 
+interface AutoFixMetrics {
+    totalFixed: number;
+    stillInvalid: number[];
+    recoveryAttempts: number;
+    completionRate: number;
+    fixReasons: string[];
+}
+
 interface QualityReportProps {
     jobId: string;
     warnings: SceneWarning[];
     qualityScore: JobQualityScore;
     onClose: () => void;
     onDownload?: () => void;
+    autoFixMetrics?: AutoFixMetrics;
 }
 
 const QualityReport: React.FC<QualityReportProps> = ({
@@ -16,7 +25,8 @@ const QualityReport: React.FC<QualityReportProps> = ({
     warnings,
     qualityScore,
     onClose,
-    onDownload
+    onDownload,
+    autoFixMetrics
 }) => {
     // Get score color
     const getScoreColor = (score: number) => {
@@ -62,6 +72,34 @@ const QualityReport: React.FC<QualityReportProps> = ({
                             <div className="text-red-600">Vượt tolerance</div>
                         </div>
                     </div>
+
+                    {/* Auto-Fix Metrics */}
+                    {autoFixMetrics && (autoFixMetrics.totalFixed > 0 || autoFixMetrics.stillInvalid.length > 0) && (
+                        <div className="mt-3 p-3 bg-slate-800 rounded border border-slate-700">
+                            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                                🔧 Auto-Fix Report
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 text-xs">
+                                <div className="bg-emerald-900/30 p-2 rounded text-center">
+                                    <div className="text-emerald-400 font-bold text-lg">{autoFixMetrics.totalFixed}</div>
+                                    <div className="text-emerald-600">Scenes tự sửa</div>
+                                </div>
+                                <div className="bg-amber-900/30 p-2 rounded text-center">
+                                    <div className="text-amber-400 font-bold text-lg">{autoFixMetrics.stillInvalid.length}</div>
+                                    <div className="text-amber-600">Cần attention</div>
+                                </div>
+                                <div className={`p-2 rounded text-center ${autoFixMetrics.completionRate >= 100 ? 'bg-green-900/30' : 'bg-yellow-900/30'}`}>
+                                    <div className={`font-bold text-lg ${autoFixMetrics.completionRate >= 100 ? 'text-green-400' : 'text-yellow-400'}`}>{autoFixMetrics.completionRate}%</div>
+                                    <div className="text-slate-600">Hoàn thành</div>
+                                </div>
+                            </div>
+                            {autoFixMetrics.stillInvalid.length > 0 && (
+                                <div className="mt-2 text-xs text-amber-400">
+                                    ⚠️ Scenes cần xem xét thủ công: {autoFixMetrics.stillInvalid.join(', ')}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Warnings list */}

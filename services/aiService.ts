@@ -16,13 +16,19 @@ import { AIRequest } from '@/lib/ai/types';
 import { normalizeText, extractJSON } from '@/lib/ai/normalizer';
 import { countVietnameseWords } from '@/lib/wordCounter';
 import { logError } from '@/lib/errorTracker';
-import type { SceneWarning } from '@/lib/types';
+import type {
+    SceneWarning,
+    EnhancedOutlineBatchResult
+} from '@/lib/types';
+import { sceneValidator } from '@/lib/validator';
+import { autoFixEngine } from './autoFixEngine';
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
 const SCENES_PER_BATCH = 3;
+const MAX_AUTO_FIX_ATTEMPTS = 3;
 
 // ============================================================================
 // STEP 1: GET NEWS AND EVENTS
@@ -295,6 +301,277 @@ YÊU CẦU:
 
     console.warn(`⚠️ Batch ${batchIndex + 1} Max Retries Exceeded. Returning with ${lastResult.warnings.length} warnings.`);
     return lastResult;
+};
+
+// ============================================================================
+// STEP 2: CREATE OUTLINE BATCH WITH AUTO-FIX (Enhanced Version)
+// ============================================================================
+
+export const createOutlineBatchWithAutoFix = async (
+    apiKey: string,
+    newsData: string,
+    systemPrompt: string,
+    currentOutline: string,
+    batchIndex: number,
+    sceneCount: number,
+    targetWords: number,
+    tolerance: number,
+    onRetry?: (reason: string, attempt: number) => void
+): Promise<EnhancedOutlineBatchResult> => {
+    setFallbackApiKey(apiKey);
+
+    const minWords = targetWords - tolerance;
+    const maxWords = targetWords + tolerance;
+
+    const startScene = batchIndex * SCENES_PER_BATCH + 1;
+    let endScene = Math.min(startScene + SCENES_PER_BATCH - 1, sceneCount);
+
+    if (startScene > sceneCount) {
+        return {
+            content: "END_OF_OUTLINE",
+            warnings: [],
+            fixedScenes: [],
+            stillInvalid: [],
+            qualityMetrics: {
+                totalFixed: 0,
+                stillInvalid: [],
+                recoveryAttempts: 0,
+                completionRate: 100,
+                fixReasons: []
+            },
+            validationDetails: {
+                totalExpected: sceneCount,
+                totalFound: 0,
+                validScenes: [],
+                invalidScenes: [],
+                missingScenes: [],
+                completionRate: 0,
+                allScenesContent: ''
+            }
+        };
+    }
+
+    const adapter = getAdapterForStep(2);
+    console.log(`📝 Step 2 Auto-Fix Batch ${batchIndex + 1} using model: ${getModelIdForStep(2)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
+
+    let attempts = 0;
+    const MAX_RETRIES = 5;
+    let feedback = "";
+    let lastContent = "";
+    let lastWarnings: SceneWarning[] = [];
+
+    const expectedScenesList = Array.from({ length: endScene - startScene + 1 }, (_, i) => startScene + i);
+    const requiredScenesStr = expectedScenesList.map(s => `Scene ${s}`).join(", ");
+
+    while (attempts < MAX_RETRIES) {
+        const userPrompt = `
+Thông tin đầu vào (Tin tức/Sự kiện):
+${newsData}
+
+Dàn ý đã có (Context):
+${currentOutline.slice(-2000)}
+
+NHIỆM VỤ HIỆN TẠI (Batch scenes ${startScene} -> ${endScene}):
+Hãy lập tiếp dàn ý chi tiết cho các cảnh: **${requiredScenesStr}**.
+Tổng số cảnh dự kiến: ${sceneCount}.
+
+===== QUY TẮC ĐẾM TỪ TIẾNG VIỆT =====
+Mỗi ÂM TIẾT tách biệt bằng KHOẢNG TRẮNG = 1 TỪ.
+Ví dụ: "Mẹ kế không phải ác quỷ" = 6 từ.
+======================================
+
+YÊU CẦU VỀ LỜI DẪN (VOICE OVER):
+1. Mỗi cảnh PHẢI có mục "**Lời dẫn:**".
+2. Độ dài MỤC TIÊU: **${targetWords} từ** (chấp nhận từ ${minWords} đến ${maxWords} từ).
+3. Cuối mỗi Lời dẫn, ghi số từ thực tế. Ví dụ: (18 từ).
+
+QUY TẮC FORMAT:
+Scene ${startScene}: [Tên cảnh]
+Hình ảnh: [Mô tả hình ảnh chi tiết - ít nhất 10 từ]
+Lời dẫn: [Nội dung lời dẫn] (Số từ)
+
+... (tiếp tục đến Scene ${endScene})
+` + feedback;
+
+        try {
+            console.log(`🚀 Auto-Fix Batch ${batchIndex + 1} Attempt ${attempts + 1}/${MAX_RETRIES}...`);
+
+            const response = await adapter.generateContent({
+                systemPrompt,
+                userMessage: userPrompt,
+            });
+
+            const rawResponse = response.content;
+            lastContent = rawResponse;
+
+            const sceneBlocks = rawResponse.split(/(?=Scene \d+:)/i).filter(block => /^Scene \d+:/i.test(block.trim()));
+            const warnings: SceneWarning[] = [];
+            const correctedScenesMap = new Map<number, string>();
+
+            sceneBlocks.forEach(block => {
+                const match = block.match(/Scene (\d+):/i);
+                if (match && match[1]) {
+                    const sceneNum = parseInt(match[1]);
+                    correctedScenesMap.set(sceneNum, block);
+                }
+            });
+
+            const finalScenes: string[] = [];
+            let missingScenes: number[] = [];
+
+            for (const sceneNum of expectedScenesList) {
+                if (!correctedScenesMap.has(sceneNum)) {
+                    missingScenes.push(sceneNum);
+                    continue;
+                }
+
+                let block = correctedScenesMap.get(sceneNum)!;
+                const voMatch = block.match(/Lời dẫn:\s*([\s\S]*?)(?:\s*\(\d+\s*từ\)\s*)?(?=\n\n|$)/i);
+
+                if (voMatch && voMatch[1]) {
+                    const rawContent = voMatch[1]
+                        .replace(/\(\d+\s*từ\)/g, '')
+                        .replace(/\*\*/g, '')
+                        .trim();
+
+                    const actualWordCount = countVietnameseWords(rawContent);
+
+                    if (actualWordCount < minWords || actualWordCount > maxWords) {
+                        const diff = actualWordCount > maxWords
+                            ? actualWordCount - maxWords
+                            : actualWordCount - minWords;
+
+                        warnings.push({
+                            sceneNum,
+                            actual: actualWordCount,
+                            target: targetWords,
+                            tolerance,
+                            diff,
+                        });
+                    }
+
+                    block = block.replace(
+                        /Lời dẫn:\s*[\s\S]*?(?:\(\d+\s*từ\))?(?=\n\n|$)/i,
+                        `Lời dẫn: ${rawContent} (${actualWordCount} từ)`
+                    );
+                } else {
+                    warnings.push({
+                        sceneNum,
+                        actual: 0,
+                        target: targetWords,
+                        tolerance,
+                        diff: -targetWords,
+                    });
+                }
+                finalScenes.push(block);
+            }
+
+            lastContent = finalScenes.join('\n\n');
+            lastWarnings = warnings;
+
+            if (missingScenes.length > 0) {
+                feedback = `\n⚠️ LỖI NGHIÊM TRỌNG: Bạn đã bỏ qua các cảnh: ${missingScenes.map(s => `Scene ${s}`).join(", ")}.
+👉 YÊU CẦU: Viết lại ĐẦY ĐỦ các cảnh từ Scene ${startScene} đến Scene ${endScene}. Không được bỏ sót bất kỳ cảnh nào.\n`;
+                console.warn(`⚠️ Batch ${batchIndex + 1} Attempt ${attempts + 1} Failed: Missing scenes ${missingScenes.join(", ")}`);
+                if (onRetry) onRetry(`Missing scenes: ${missingScenes.join(", ")}`, attempts + 1);
+                attempts++;
+                continue;
+            }
+
+            attempts++;
+
+        } catch (e: any) {
+            console.error(`AI Service Error (Attempt ${attempts + 1}):`, e);
+            logError(2, `API Error at Batch ${batchIndex + 1} Attempt ${attempts + 1}: ${e.message}`, 'ERROR', { batchIndex, error: e.message });
+
+            if (onRetry) onRetry(`API Error: ${e.message}`, attempts + 1);
+            feedback = `\n⚠️ Lỗi hệ thống: ${e.message}. Hãy thử lại.\n`;
+            attempts++;
+        }
+    }
+
+    console.log(`🔧 Starting Auto-Fix Phase for Batch ${batchIndex + 1}...`);
+
+    const fixedScenes: number[] = [];
+    const stillInvalid: number[] = [];
+    const allFixReasons: string[] = [];
+
+    let currentContent = lastContent;
+
+    for (let fixAttempt = 1; fixAttempt <= MAX_AUTO_FIX_ATTEMPTS; fixAttempt++) {
+        const validationResult = sceneValidator.validateAllScenes(
+            currentContent,
+            endScene - startScene + 1
+        );
+
+        if (validationResult.completionRate >= 100 && validationResult.invalidScenes.length === 0) {
+            console.log(`✅ Auto-Fix Batch ${batchIndex + 1} Attempt ${fixAttempt}: All scenes valid`);
+            break;
+        }
+
+        if (validationResult.invalidScenes.length > 0) {
+            console.log(`🔧 Auto-Fix Attempt ${fixAttempt}: Found ${validationResult.invalidScenes.length} invalid scenes`);
+
+            const fixes = await autoFixEngine.fixMultipleScenes(
+                validationResult.invalidScenes,
+                targetWords,
+                tolerance,
+                systemPrompt,
+                currentContent
+            );
+
+            const successfulFixes = fixes.filter(f => f.isValidAfterFix && f.fixedContent);
+            const failedFixes = fixes.filter(f => !f.isValidAfterFix);
+
+            for (const fix of successfulFixes) {
+                if (!fixedScenes.includes(fix.sceneNum)) {
+                    fixedScenes.push(fix.sceneNum);
+                    allFixReasons.push(...fix.fixReasons);
+                }
+            }
+
+            for (const fail of failedFixes) {
+                if (!stillInvalid.includes(fail.sceneNum)) {
+                    stillInvalid.push(fail.sceneNum);
+                }
+            }
+
+            if (successfulFixes.length > 0) {
+                currentContent = autoFixEngine.applyFixes(currentContent, successfulFixes);
+                console.log(`✅ Fixed ${successfulFixes.length} scenes in attempt ${fixAttempt}`);
+            }
+
+            if (failedFixes.length > 0 && fixAttempt === MAX_AUTO_FIX_ATTEMPTS) {
+                logError(2, `Auto-fix failed for scenes: ${failedFixes.map(f => f.sceneNum).join(', ')}`, 'WARNING', { batchIndex });
+            }
+        } else {
+            break;
+        }
+    }
+
+    const finalValidation = sceneValidator.validateAllScenes(
+        currentContent,
+        endScene - startScene + 1
+    );
+
+    const qualityMetrics = {
+        totalFixed: fixedScenes.length,
+        stillInvalid,
+        recoveryAttempts: MAX_AUTO_FIX_ATTEMPTS,
+        completionRate: finalValidation.completionRate,
+        fixReasons: [...new Set(allFixReasons)]
+    };
+
+    console.log(`📊 Auto-Fix Complete for Batch ${batchIndex + 1}: ${fixedScenes.length} fixed, ${stillInvalid.length} still invalid`);
+
+    return {
+        content: currentContent,
+        warnings: lastWarnings,
+        fixedScenes,
+        stillInvalid,
+        qualityMetrics,
+        validationDetails: finalValidation
+    };
 };
 
 // ============================================================================

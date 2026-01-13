@@ -199,4 +199,54 @@ export const logError = (
     errorTracker.log({ step, message, level, context });
 };
 
+/**
+ * Log auto-fix specific events
+ */
+export const logAutoFixEvent = (
+    batchIndex: number,
+    attempt: number,
+    fixedScenes: number[],
+    stillInvalid: number[],
+    completionRate: number
+): void => {
+    errorTracker.log({
+        step: 2,
+        message: `Auto-Fix Attempt ${attempt}: ${fixedScenes.length} fixed, ${stillInvalid.length} still invalid`,
+        level: fixedScenes.length > stillInvalid.length ? 'INFO' : 'WARNING',
+        batchIndex,
+        sceneRange: fixedScenes.length > 0
+            ? `Fixed: ${fixedScenes.join(',')}; Invalid: ${stillInvalid.join(',')}`
+            : `All invalid: ${stillInvalid.join(',')}`,
+        context: {
+            type: 'auto_fix',
+            attempt,
+            fixedCount: fixedScenes.length,
+            stillInvalidCount: stillInvalid.length,
+            completionRate
+        }
+    });
+};
+
+/**
+ * Log validation errors for a batch
+ */
+export const logValidationError = (
+    batchIndex: number,
+    invalidScenes: number[],
+    missingScenes: number[]
+): void => {
+    errorTracker.log({
+        step: 2,
+        message: `Validation failed: ${invalidScenes.length} invalid, ${missingScenes.length} missing`,
+        level: 'WARNING',
+        batchIndex,
+        sceneRange: `Invalid: ${invalidScenes.join(',')}; Missing: ${missingScenes.join(',')}`,
+        context: {
+            type: 'validation',
+            invalidScenes,
+            missingScenes
+        }
+    });
+};
+
 export default errorTracker;
