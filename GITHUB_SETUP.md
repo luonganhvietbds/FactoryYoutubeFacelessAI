@@ -1,4 +1,4 @@
-# GitHub Setup Guide for AI Script Factory
+# GitHub + Vercel Setup Guide for AI Script Factory
 
 ## Installed Tools
 
@@ -12,17 +12,18 @@
 - **Location:** `C:\Tools\GitHubCLI\gh.exe`
 - **Status:** ✅ Installed
 
-## Quick Commands
+---
 
-### Using Git (Command Line)
+## GitHub Configuration
+
+### Quick Commands (Git)
 ```bash
-# Navigate to project
 cd C:\Users\ADMIN\Downloads\VIET\Tool\ Youtube\ 6\ bước\Tool\ Youtube\ 6\ bước\ai-script-factory
 
 # Check status
 git status
 
-# Add changes
+# Add and commit changes
 git add .
 git commit -m "Your message"
 git push origin main
@@ -31,88 +32,105 @@ git push origin main
 git pull
 ```
 
-### Using GitHub CLI
-```bash
-# Check authentication
-gh auth status
-
-# Login (interactive)
-gh auth login
-
-# View repository in browser
-gh repo view --web
-
-# Sync repository
-gh repo sync
-
-# Create pull request
-gh pr create
-```
-
-## Authentication
-
-### Option 1: GitHub CLI Login
-1. Run: `C:\Tools\GitHubCLI\gh.exe auth login`
-2. Choose "Login with web browser"
-3. Copy the one-time code
-4. Press Enter to open browser
-5. Paste code and authorize
-
-### Option 2: GitHub Token (Non-interactive)
-1. Create token at: https://github.com/settings/tokens
-2. Permissions needed: `repo`, `workflow`
-3. Run: `gh auth login --with-token <your-token>`
-
-### Option 3: Git Credential Manager
-Git is configured to use Credential Manager automatically.
-- First push will prompt for GitHub login
-- Credentials saved in Windows Credential Manager
-
-## Repository Info
+### Repository Info
 - **URL:** https://github.com/luonganhvietbds/Vi-t-k-ch-b-n-5-b-c.git
 - **Branch:** main
-- **Status:** Clean (no uncommitted changes)
+- **Status:** ✅ Synced
 
-## Workflow for Updates
+---
 
-### Daily Development
+## Vercel Deployment
+
+### Files Created
+- `vercel.json` - Vercel configuration
+- `vercel-deploy.bat` - Windows deployment helper
+- `vercel-deploy.ps1` - PowerShell deployment script
+
+### Deployment Options
+
+#### Option 1: GitHub Auto-Deploy (Recommended)
 ```bash
-# Before starting work
-git pull
-
-# After making changes
+# Push code to GitHub - Vercel will auto-deploy
 git add .
-git commit -m "Description of changes"
-git push
+git commit -m "Your message"
+git push origin main
 ```
 
-### Using Batch Helper
-```bash
-# Run the helper script
-gh-run status  # Check auth status
-gh-run push    # Sync to GitHub
-gh-run repo    # Open in browser
+#### Option 2: Vercel Dashboard Manual Deploy
+1. Go to: https://vercel.com/dashboard
+2. Select project "ai-script-factory"
+3. Click **Redeploy**
+
+#### Option 3: Using Deployment Scripts
+```powershell
+# Set token and trigger deployment
+$env:VERCEL_TOKEN = "your_token_here"
+.\vercel-deploy.ps1 -Trigger
 ```
+
+### Vercel Setup Checklist
+
+If deployment is not working:
+
+1. **Link Project to GitHub**
+   - Go to: https://vercel.com/dashboard
+   - Click "Add New Project"
+   - Import from: `luonganhvietbds/Vi-t-k-ch-b-n-5-b-c`
+
+2. **Configure Git Settings**
+   - Project Settings → Git
+   - Deploy Branch: `main`
+   - Enable "Automatic Git Deployments"
+
+3. **Framework Settings**
+   - Project Settings → Framework Preset
+   - Select: **Next.js**
+
+4. **Environment Variables**
+   - Project Settings → Environment Variables
+   - Add:
+     - `NEXT_PUBLIC_FIREBASE_API_KEY`
+     - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+     - `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+     - Other Firebase config variables
+
+### Dashboard Links
+- **Vercel Dashboard:** https://vercel.com/dashboard
+- **Project Deployments:** https://vercel.com/luonganhvietbds/ai-script-factory/deployments
+- **GitHub Repository:** https://github.com/luonganhvietbds/Vi-t-k-ch-b-n-5-b-c
+
+---
 
 ## Troubleshooting
 
-### "gh not recognized"
-- Run with full path: `C:\Tools\GitHubCLI\gh.exe`
-- Or restart Command Prompt/PowerShell
+### Git Issues
 
-### Authentication Issues
+**"gh not recognized"**
+```bash
+# Run with full path
+C:\Tools\GitHubCLI\gh.exe auth status
+```
+
+**Authentication Issues**
 ```bash
 # Re-authenticate
 C:\Tools\GitHubCLI\gh.exe auth logout
 C:\Tools\GitHubCLI\gh.exe auth login
 ```
 
-### Git Permission Denied
-```bash
-# Check remote URL
-git remote -v
+### Vercel Issues
 
-# Update credentials
-git credential-manager erase
-# Then push again to re-authenticate
-```
+**Vercel not auto-deploying**
+1. Check: Project Settings → Git → Deploy Branch = main
+2. Check: GitHub repo is connected in Vercel
+3. Check: vercel.json exists in project root
+
+**Build failures**
+- Check: https://vercel.com/luonganhvietbds/ai-script-factory/deployments
+- Review build logs in Vercel dashboard
+
+**Environment variables missing**
+1. Go to Project Settings → Environment Variables
+2. Add all Firebase config variables
+3. Redeploy project
+
