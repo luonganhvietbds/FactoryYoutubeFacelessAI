@@ -127,7 +127,7 @@ export class AutoFixEngine {
 
                     fixedScenes.push({
                         sceneNum,
-                        originalContent: original
+                        originalContent: original?.sceneData
                             ? `Scene ${original.sceneData.sceneNum}: ${original.sceneData.title}\nHình ảnh: ${original.sceneData.visual}\nLời dẫn: ${original.sceneData.voiceover}`
                             : '',
                         fixedContent: block,
