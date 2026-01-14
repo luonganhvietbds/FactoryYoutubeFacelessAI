@@ -90,16 +90,6 @@ export const DEFAULT_ADMIN_PERMISSIONS: UserPermissions = {
     maxConcurrent: 5,
 };
 
-/**
- * Default permissions for admins
- */
-export const DEFAULT_ADMIN_PERMISSIONS: UserPermissions = {
-    allowedPackIds: ['*'],        // All packs
-    defaultPackId: undefined,     // Admin can access all
-    batchModeEnabled: true,       // Batch mode enabled
-    maxConcurrent: 5,             // 5 concurrent jobs
-};
-
 // ========== WORKFLOW STATE ==========
 
 /**
