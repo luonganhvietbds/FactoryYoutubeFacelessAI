@@ -13,9 +13,12 @@ import {
     DEFAULT_PLAN_CONFIG,
     MAX_KEYWORDS_PER_SESSION
 } from '@/lib/types';
-import { v4 as uuidv4 } from 'uuid';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const generateId = (): string => {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+};
 
 export class PlanService {
     private apiKey: string;
@@ -51,7 +54,7 @@ export class PlanService {
         }
 
         const session: PlanSession = {
-            id: uuidv4(),
+            id: generateId(),
             keywords: validKeywords,
             ideas: [],
             totalKeywords: validKeywords.length,
@@ -72,7 +75,7 @@ export class PlanService {
 
             const keyword = validKeywords[i];
             const idea: PlanIdea = {
-                id: uuidv4(),
+                id: generateId(),
                 keyword,
                 topic: '',
                 outline: '',
