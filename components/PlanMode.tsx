@@ -3,13 +3,13 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { getPromptContentById } from '@/lib/prompt-utils';
-import { PlanSession, PlanProgress, PlanConfig, PromptPackManifest } from '@/lib/types';
+import { PlanSession, PlanProgress, PlanConfig, SystemPromptData } from '@/lib/types';
 import { createPlanService } from '@/services/planService';
 import PlanProgressDisplay from './PlanProgress';
 import PlanResults from './PlanResults';
 
 interface PlanModeProps {
-    promptsLibrary: PromptPackManifest[];
+    promptsLibrary: SystemPromptData[];
     selectedPromptIds: Record<number, string>;
 }
 
