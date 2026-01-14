@@ -1533,7 +1533,7 @@ export default function Home() {
               )}
 
               {/* ========== SINGLE MODE UI ========== */}
-              {!isBatchMode && !isPlanMode && (
+              {!isPlanMode && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex flex-col h-[750px]">
                   <h2 className="text-2xl font-bold mb-1 text-sky-400">{activeStepConfig.title}</h2>
