@@ -928,9 +928,10 @@ export const createMetadata = async (
     setFallbackApiKey(apiKey);
 
     const adapter = getAdapterForStep(6);
+    const userMessage = "Script content:\n" + detailedScript.slice(0, 30000);
     const response = await adapter.generateContent({
         systemPrompt,
-        userMessage: `Script content:\n${detailedScript.slice(0, 30000)}`,
+        userMessage,
     });
 
     return response.content;
