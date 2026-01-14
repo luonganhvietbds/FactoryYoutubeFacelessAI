@@ -50,10 +50,11 @@ export interface UserProfile {
  * User permissions for feature access
  */
 export interface UserPermissions {
-    allowedPackIds: string[];        // Which prompt packs can access ('*' = all)
-    defaultPackId?: string;          // NEW: Auto-assign default pack on login
-    batchModeEnabled: boolean;       // Can use batch mode
-    maxConcurrent: number;           // Max concurrent batch jobs (default: 3)
+    allowedPackIds: string[];
+    defaultPackId?: string;
+    batchModeEnabled: boolean;
+    multiIdeaEnabled: boolean;
+    maxConcurrent: number;
 }
 
 /**
@@ -74,10 +75,19 @@ export interface UserData {
  * Default permissions for new members
  */
 export const DEFAULT_MEMBER_PERMISSIONS: UserPermissions = {
-    allowedPackIds: [],           // No packs by default
-    defaultPackId: undefined,     // No default pack - must be assigned
-    batchModeEnabled: false,      // Batch mode disabled by default
-    maxConcurrent: 1,             // Only 1 concurrent job
+    allowedPackIds: [],
+    defaultPackId: undefined,
+    batchModeEnabled: false,
+    multiIdeaEnabled: false,
+    maxConcurrent: 1,
+};
+
+export const DEFAULT_ADMIN_PERMISSIONS: UserPermissions = {
+    allowedPackIds: ['*'],
+    defaultPackId: undefined,
+    batchModeEnabled: true,
+    multiIdeaEnabled: true,
+    maxConcurrent: 5,
 };
 
 /**
@@ -281,4 +291,52 @@ export interface AutoFixEvent {
 
 // ========== END AUTO-FIX SYSTEM ==========
 
+// ========== PLAN MODE ==========
+
+export interface PlanIdea {
+    id: string;
+    keyword: string;
+    topic: string;
+    outline: string;
+    createdAt: string;
+    status: 'pending' | 'completed' | 'failed';
+    error?: string;
+}
+
+export interface PlanSession {
+    id: string;
+    keywords: string[];
+    ideas: PlanIdea[];
+    totalKeywords: number;
+    completedCount: number;
+    failedCount: number;
+    status: 'idle' | 'running' | 'completed' | 'cancelled';
+    startedAt?: string;
+    completedAt?: string;
+}
+
+export interface PlanConfig {
+    targetWords: number;
+    tolerance: number;
+    delayBetweenKeywords: number;
+}
+
+export interface PlanProgress {
+    current: number;
+    total: number;
+    currentKeyword: string;
+    status: 'idle' | 'processing' | 'completed' | 'failed';
+    completedIdeas?: PlanIdea[];
+    lastError?: string;
+}
+
+export const DEFAULT_PLAN_CONFIG: PlanConfig = {
+    targetWords: 20,
+    tolerance: 3,
+    delayBetweenKeywords: 2000,
+};
+
+export const MAX_KEYWORDS_PER_SESSION = 100;
+
+// ========== END PLAN MODE ==========
 

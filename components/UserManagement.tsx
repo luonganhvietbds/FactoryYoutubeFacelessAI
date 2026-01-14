@@ -431,6 +431,19 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
                                                     </div>
                                                 </label>
 
+                                                {/* Multi-Idea Mode */}
+                                                <label className="flex items-center justify-between cursor-pointer group">
+                                                    <span className="text-slate-300">Multi-Idea Plan</span>
+                                                    <div
+                                                        onClick={() => handleTogglePermission('multiIdeaEnabled')}
+                                                        className={`w-12 h-6 rounded-full transition-colors relative ${editForm.permissions?.multiIdeaEnabled ? 'bg-green-600' : 'bg-slate-700'
+                                                            }`}
+                                                    >
+                                                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${editForm.permissions?.multiIdeaEnabled ? 'left-7' : 'left-1'
+                                                            }`} />
+                                                    </div>
+                                                </label>
+
                                                 {/* Max Concurrent */}
                                                 <div className="flex items-center justify-between">
                                                     <span className="text-slate-300">Max Concurrent Jobs</span>
@@ -493,7 +506,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ onRefresh }) => {
                                                     <span className={`px-2 py-0.5 rounded ${user.permissions?.batchModeEnabled ? 'bg-green-900/30 text-green-400' : 'bg-slate-800 text-slate-500'}`}>
                                                         📦 Batch: {user.permissions?.batchModeEnabled ? '✅' : '❌'}
                                                     </span>
-                                                    <span className="bg-slate-800 px-2 py-0.5 rounded">⚡ Max: {user.permissions?.maxConcurrent || 1}</span>
+                                                    <span className={`px-2 py-0.5 rounded ${user.permissions?.multiIdeaEnabled ? 'bg-green-900/30 text-green-400' : 'bg-slate-800 text-slate-500'}`}>
+                                                        💡 Multi-Idea: {user.permissions?.multiIdeaEnabled ? '✅' : '❌'}
+                                                    </span>
+                                                     <span className="bg-slate-800 px-2 py-0.5 rounded">⚡ Max: {user.permissions?.maxConcurrent || 1}</span>
                                                 </div>
                                                 {/* Pack Access Display */}
                                                 <div className="flex flex-wrap gap-1 mt-2">
