@@ -872,15 +872,7 @@ export const generatePromptsBatch = async (
     console.log(`Step 4 using model: ${getModelIdForStep(4)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
 
     const userPrompt = getPromptsBatchPrompt(language, scriptChunk);
-[
-  {
-    "id": "Scene X",
-    "image_prompt": "Nội dung nguyên văn từ mục Hình ảnh",
-    "video_prompt": "Nội dung nguyên văn từ mục Hình ảnh"
-  }
-]
-`;
-
+    
     const response = await adapter.generateContent({
         systemPrompt,
         userMessage: userPrompt,
