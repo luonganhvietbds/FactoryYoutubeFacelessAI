@@ -19,6 +19,9 @@ export interface SystemPromptData {
     packId?: string;
 }
 
+// Re-export from apiKeyManager for convenience
+export type { ApiKeyInfo, KeyStatus } from '@/lib/apiKeyManager';
+
 export interface PromptPackManifest {
     id: string;
     name: string;
