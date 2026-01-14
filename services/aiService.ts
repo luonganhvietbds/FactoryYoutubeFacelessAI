@@ -930,7 +930,7 @@ export const createMetadata = async (
     const adapter = getAdapterForStep(6);
     const response = await adapter.generateContent({
         systemPrompt,
-        userMessage: `Nội dung kịch bản:\n${detailedScript.slice(0, 30000)}`,
+        userMessage: `Script content:\n${detailedScript.slice(0, 30000)}`,
     });
 
     return response.content;
