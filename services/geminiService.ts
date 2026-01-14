@@ -437,7 +437,7 @@ export const mergePromptJsons = (jsonStrings: string[]): string => {
 
     jsonStrings.forEach(str => {
         try {
-            const cleanStr = str.replace(/```json/g, '').replace(/```/g, '').trim();
+            const cleanStr = str.replace(/\x60\x60\x60json/gi, '').replace(/\x60\x60\x60/gi, '').trim();
             const start = cleanStr.indexOf('{');
             const end = cleanStr.lastIndexOf('}');
             if (start !== -1 && end !== -1) {
