@@ -573,7 +573,7 @@ export default function Home() {
       if (job.currentStep === 2 && job.completedBatches && job.partialOutputs?.outline) {
         startBatch = job.completedBatches;
         fullOutline = job.partialOutputs.outline;
-        console.log(`🔄 Resuming Job ${job.id} Step 2 from Batch ${startBatch}`);
+        console.log(`Resuming Job ${job.id} Step 2 from Batch ${startBatch}`);
       }
 
         for (let b = startBatch; b < totalOutlineBatches; b++) {
@@ -619,7 +619,7 @@ export default function Home() {
       if (job.currentStep === 3 && job.completedBatches && job.partialOutputs?.script) {
         scriptStartBatch = job.completedBatches;
         fullScript = job.partialOutputs.script;
-        console.log(`🔄 Resuming Job ${job.id} Step 3 from Batch ${scriptStartBatch}`);
+        console.log(`Resuming Job ${job.id} Step 3 from Batch ${scriptStartBatch}`);
       }
 
       for (let b = scriptStartBatch; b < totalScriptBatches; b++) {

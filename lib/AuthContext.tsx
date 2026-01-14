@@ -88,11 +88,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
             if (userSnap.exists()) {
                 // User document exists
                 const data = userSnap.data() as UserData;
-                console.log("📋 User data loaded:", data.email, "Role:", data.role);
+                console.log("User data loaded:", data.email, "Role:", data.role);
                 return data;
             } else {
                 // Auto-migrate: Create new user document for existing Firebase Auth user
-                console.log("🔄 Auto-migrating user:", user.email);
+                console.log("Auto-migrating user:", user.email);
                 const newUserData: UserData = {
                     uid: user.uid,
                     email: user.email || '',
