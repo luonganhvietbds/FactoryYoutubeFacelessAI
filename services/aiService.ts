@@ -672,6 +672,7 @@ ${getFormatRules(language, startScene, endScene)}
                     : /Voice-over:\s*[\s\S]*?(?:\(\d+\s*words?\))?(?=\n\n|$)/i;
                 
                 const wordUnitPattern = language === 'vi' ? /\(\d+\s*từ\)/g : /\(\d+\s*words?\)/gi;
+                const voMatch = block.match(voiceoverPattern);
 
                 if (voMatch && voMatch[1]) {
                     const rawContent = voMatch[1]
