@@ -213,7 +213,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
 ` + feedback; // Append feedback if this is a retry
 
         try {
-            console.log(`🚀 Batch ${batchIndex + 1} Attempt ${attempts + 1}/${MAX_RETRIES}...`);
+            console.log(`Batch ${batchIndex + 1} Attempt ${attempts + 1}/${MAX_RETRIES}...`);
             const rawResponse = await callGemini(apiKey, systemPrompt, userPrompt, false, onRetry);
 
             // ========== POST-CORRECTION ENGINE ==========

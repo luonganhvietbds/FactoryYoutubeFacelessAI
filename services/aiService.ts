@@ -380,7 +380,7 @@ ${getFormatRules(language, startScene, endScene)}
 ` + feedback;
 
         try {
-            console.log(`🚀 Batch ${batchIndex + 1} Attempt ${attempts + 1}/${MAX_RETRIES}...`);
+            console.log(`Batch ${batchIndex + 1} Attempt ${attempts + 1}/${MAX_RETRIES}...`);
 
             const response = await adapter.generateContent({
                 systemPrompt,
@@ -505,7 +505,7 @@ ${getFormatRules(language, startScene, endScene)}
 
     // ===== RECOVERY PASS: Fill Missing Scenes =====
     if (missingScenes.length > 0) {
-        console.log(`🔧 Recovery Pass: Attempting to fill ${missingScenes.length} missing scenes: ${missingScenes.join(", ")}`);
+        console.log(`Recovery Pass: Attempting to fill ${missingScenes.length} missing scenes: ${missingScenes.join(", ")}`);
         const missingScenesStr = missingScenes.map(s => `Scene ${s}`).join(", ");
         const recoveryPrompt = getRecoveryPrompt(language, missingScenesStr, currentOutline, lastResult.content, targetWords);
         try {
@@ -534,7 +534,7 @@ ${getFormatRules(language, startScene, endScene)}
 
             const sortedScenes = Array.from(allScenesMap.entries()).sort((a, b) => a[0] - b[0]).map(entry => entry[1]);
             lastResult.content = sortedScenes.join('\n\n');
-            console.log(`🔧 Recovery Complete. Total scenes: ${sortedScenes.length}`);
+            console.log(`Recovery Complete. Total scenes: ${sortedScenes.length}`);
         } catch (e: any) {
             console.error(`Recovery Pass Failed:`, e);
             logError(2, `Recovery Failed: ${e.message}`, 'ERROR', { batchIndex, error: e.message });
@@ -595,7 +595,7 @@ export const createOutlineBatchWithAutoFix = async (
     }
 
     const adapter = getAdapterForStep(2);
-    console.log(`📝 Step 2 Auto-Fix Batch ${batchIndex + 1} using model: ${getModelIdForStep(2)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
+    console.log(`Step 2 Auto-Fix Batch ${batchIndex + 1} using model: ${getModelIdForStep(2)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
 
     let attempts = 0;
     const MAX_RETRIES = 5;
@@ -631,7 +631,7 @@ ${getFormatRules(language, startScene, endScene)}
 ` + feedback;
 
         try {
-            console.log(`🚀 Auto-Fix Batch ${batchIndex + 1} Attempt ${attempts + 1}/${MAX_RETRIES}...`);
+            console.log(`Auto-Fix Batch ${batchIndex + 1} Attempt ${attempts + 1}/${MAX_RETRIES}...`);
 
             const response = await adapter.generateContent({
                 systemPrompt,
@@ -736,7 +736,7 @@ ${getFormatRules(language, startScene, endScene)}
         }
     }
 
-    console.log(`🔧 Starting Auto-Fix Phase for Batch ${batchIndex + 1}...`);
+    console.log(`Starting Auto-Fix Phase for Batch ${batchIndex + 1}...`);
 
     const fixedScenes: number[] = [];
     const stillInvalid: number[] = [];
@@ -756,7 +756,7 @@ ${getFormatRules(language, startScene, endScene)}
         }
 
         if (validationResult.invalidScenes.length > 0) {
-            console.log(`🔧 Auto-Fix Attempt ${fixAttempt}: Found ${validationResult.invalidScenes.length} invalid scenes`);
+            console.log(`Auto-Fix Attempt ${fixAttempt}: Found ${validationResult.invalidScenes.length} invalid scenes`);
 
             const fixes = await autoFixEngine.fixMultipleScenes(
                 validationResult.invalidScenes,
@@ -809,7 +809,7 @@ ${getFormatRules(language, startScene, endScene)}
         fixReasons: [...new Set(allFixReasons)]
     };
 
-    console.log(`📊 Auto-Fix Complete for Batch ${batchIndex + 1}: ${fixedScenes.length} fixed, ${stillInvalid.length} still invalid`);
+    console.log(`Auto-Fix Complete for Batch ${batchIndex + 1}: ${fixedScenes.length} fixed, ${stillInvalid.length} still invalid`);
 
     return {
         content: currentContent,
