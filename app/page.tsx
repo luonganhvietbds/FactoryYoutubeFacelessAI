@@ -1534,6 +1534,8 @@ export default function Home() {
 
               {/* ========== SINGLE MODE UI ========== */}
               {!isPlanMode && (
+              <>
+              <div className="mb-10"><StepProgressBar steps={STEPS_CONFIG} currentStep={viewingStep} completedSteps={workflowCompletedSteps} onStepClick={setViewingStep} /></div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex flex-col h-[750px]">
                   <h2 className="text-2xl font-bold mb-1 text-sky-400">{activeStepConfig.title}</h2>
@@ -1637,6 +1639,8 @@ export default function Home() {
                   </div>
                 </div>
               </div>
+              </>
+              )}
             </>
           )}
         </main>
