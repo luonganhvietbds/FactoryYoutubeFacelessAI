@@ -372,7 +372,7 @@ export default function Home() {
       await wait(delayBetweenSteps);
 
       // Step 3
-      const totalBatches = Math.ceil(sceneCount / 3); // Synchronized with SCENES_PER_BATCH = 3
+      const totalBatches = Math.ceil(sceneCount / 3);
       let fullScript = "";
       for (let b = 0; b < totalBatches; b++) {
         setProgress({ current: 3, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Viết Script Batch ${b + 1}/${totalBatches}...` });
@@ -384,10 +384,46 @@ export default function Home() {
       await wait(delayBetweenSteps);
 
       // Step 4
-      const totalPromptBatches = Math.ceil(chunks.length);
-      for (let i = 0; i < chunks.length; i++) {
-        setProgress({ current: 4, total: 6, message: `Prompts ${i + 1}/${chunks.length}...` });
-        jsons.push(await generatePromptsBatch(apiKey, chunks[i], getPromptContentById(selectedPromptIds[4], promptsLibrary), language));
+      setProgress({ current: 4, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Trích xuất Prompts...` });
+      const chunks = splitScriptIntoChunks(outputs[3]);
+      const jsons = [];
+      for (const chunk of chunks) jsons.push(await generatePromptsBatch(apiKey, chunk, getPromptContentById(selectedPromptIds[4], promptsLibrary), language));
+      outputs[4] = mergePromptJsons(jsons);
+      await wait(delayBetweenSteps);
+
+      // Step 5
+      setProgress({ current: 5, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Tách Voice...` });
+      const minVO = batchTargetWords - batchWordTolerance;
+      const maxVO = batchTargetWords + batchWordTolerance;
+      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), minVO, maxVO, language);
+      await wait(delayBetweenSteps);
+
+      // Step 6
+      setProgress({ current: 6, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Metadata...` });
+      outputs[6] = await createMetadata(apiKey, outputs[3], getPromptContentById(selectedPromptIds[6], promptsLibrary));
+      return outputs;
+    } catch (e: any) { throw new Error(e.message); }
+  };
+
+  const runBatchQueue = async () => {
+    if (!apiKey) { alert("Thiếu API Key."); return; }
+    if (batchQueue.length === 0) return;
+    setIsProcessingBatch(true);
+    const queueCopy = [...batchQueue];
+    for (let i = 0; i < queueCopy.length; i++) {
+      const job = queueCopy[i];
+      setBatchQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'processing' } : j));
+      try {
+        const outputs = await processSingleScript(job.input, i + 1, queueCopy.length);
+        setProcessedJobs(prev => [...prev, { ...job, status: 'completed', outputs }]);
+        setBatchQueue(prev => prev.filter(j => j.id !== job.id));
+      } catch (e: any) {
+        setProcessedJobs(prev => [...prev, { ...job, status: 'failed', error: e.message, outputs: {} }]);
+        setBatchQueue(prev => prev.filter(j => j.id !== job.id));
+      }
+      if (i < queueCopy.length - 1) {
+        setProgress({ current: 0, total: 0, message: `Waiting ${delayBetweenJobs}ms...` });
+        await new Promise(r => setTimeout(r, delayBetweenJobs));
       }
     }
     setIsProcessingBatch(false); setProgress(null);
@@ -600,7 +636,7 @@ export default function Home() {
           script: fullScript
         });
       }
-       outputs[3] = fullScript.trim();
+      outputs[3] = fullScript.trim();
 
       // Step 4: Trích xuất Prompts (with error handling for image references)
       try {
@@ -869,7 +905,7 @@ export default function Home() {
           let fullScript = "";
           for (let i = 0; i < totalBatches; i++) {
             setProgress({ current: i + 1, total: totalBatches, message: `Batch ${i + 1}/${totalBatches}` });
-            const chunk = await createScriptBatch(apiKey, input, promptContent, fullScript, i, sceneCount, language);
+            const chunk = await createScriptBatch(apiKey, input, promptContent, fullScript, i, sceneCount);
             if (chunk.includes("END_OF_SCRIPT")) { fullScript += "\n" + chunk.replace("END_OF_SCRIPT", "").trim(); break; }
             fullScript += "\n" + chunk;
           }
@@ -885,9 +921,9 @@ export default function Home() {
               const chunk = chunks[i];
               if (chunk.includes('image.png') || chunk.includes('.png')) {
                 const cleanedChunk = chunk.replace(/image\.png/g, '').replace(/\.png/g, '');
-                jsons.push(await generatePromptsBatch(apiKey, cleanedChunk, promptContent, language));
+                jsons.push(await generatePromptsBatch(apiKey, cleanedChunk, promptContent));
               } else {
-                jsons.push(await generatePromptsBatch(apiKey, chunk, promptContent, language));
+                jsons.push(await generatePromptsBatch(apiKey, chunk, promptContent));
               }
             }
             result = mergePromptJsons(jsons);
@@ -903,7 +939,7 @@ export default function Home() {
         } else if (currentStep === 5) {
           const min = singleTargetWords - singleTolerance;
           const max = singleTargetWords + singleTolerance;
-          result = await extractVoiceOver(apiKey, input, promptContent, min, max, language);
+          result = await extractVoiceOver(apiKey, input, promptContent, min, max);
         }
         else if (currentStep === 6) result = await createMetadata(apiKey, input, promptContent);
       }
