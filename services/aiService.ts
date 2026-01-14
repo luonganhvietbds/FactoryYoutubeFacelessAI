@@ -158,6 +158,135 @@ REQUIREMENTS:
 };
 
 // ============================================================================
+// STEP 3-6 LANGUAGE-AWARE PROMPT TEMPLATES
+// ============================================================================
+
+const getScriptBatchPrompt = (language: Language, outline: string, previousContent: string, startScene: number, endScene: number, sceneCount: number) => {
+    const config = LANGUAGE_CONFIGS[language];
+    
+    if (language === 'vi') {
+        return `
+Dàn ý tổng quát (Tổng số cảnh yêu cầu: ${sceneCount}):
+${outline}
+
+Nội dung kịch bản đã viết ở các phần trước (Context):
+${previousContent.slice(-2000)} 
+...(Context bị cắt bớt)...
+
+NHIỆM VỤ HIỆN TẠI (Batch xử lý cảnh ${startScene} -> ${endScene}):
+Hãy viết kịch bản chi tiết CHO ĐÚNG các cảnh từ **Scene ${startScene}** đến **Scene ${endScene}**.
+
+QUY TẮC:
+1. Bắt đầu ngay với "**Scene ${startScene}:**".
+2. Viết lần lượt đến "**Scene ${endScene}**".
+3. KHÔNG viết vượt quá Scene ${endScene} trong lần trả lời này.
+4. Giữ đúng format: Visual và Audio/Voice Over.
+5. Nếu đây là batch cuối cùng (Scene ${endScene} == ${sceneCount}), hãy viết thêm phần Kết luận (Conclusion) nếu cần.
+`;
+    } else {
+        return `
+Overall outline (Total scenes required: ${sceneCount}):
+${outline}
+
+Previously written script content (Context):
+${previousContent.slice(-2000)} 
+...(Context truncated)...
+
+CURRENT TASK (Batch processing scenes ${startScene} -> ${endScene}):
+Write detailed script for scenes from **Scene ${startScene}** to **Scene ${endScene}**.
+
+RULES:
+1. Start immediately with "**Scene ${startScene}:**".
+2. Continue sequentially to "**Scene ${endScene}**".
+3. Do NOT write beyond Scene ${endScene} in this response.
+4. Maintain correct format: Visual and Audio/Voice Over.
+5. If this is the last batch (Scene ${endScene} == ${sceneCount}), add a Conclusion section if needed.
+`;
+    }
+};
+
+const getPromptsBatchPrompt = (language: Language, scriptChunk: string) => {
+    const visualLabel = language === 'vi' ? 'Hình ảnh' : 'Image';
+    
+    if (language === 'vi') {
+        return `
+Phần kịch bản cần xử lý:
+${scriptChunk}
+
+NHIỆM VỤ (PURE EXTRACTION):
+Trích xuất NGUYÊN VĂN nội dung mục "${visualLabel}" của từng cảnh thành JSON.
+
+YÊU CẦU BẮT BUỘC:
+1. KHÔNG sáng tạo thêm. KHÔNG chỉnh sửa nội dung.
+2. Nếu kịch bản ghi: "${visualLabel}: Một con mèo đang ngủ." -> JSON phải là: "image_prompt": "Một con mèo đang ngủ."
+3. Chỉ trả về JSON thuần túy.
+
+Cấu trúc JSON:`;
+    } else {
+        return `
+Script segment to process:
+${scriptChunk}
+
+TASK (PURE EXTRACTION):
+Extract the ORIGINAL content of the "${visualLabel}" section for each scene as JSON.
+
+MANDATORY REQUIREMENTS:
+1. Do NOT add creativity. Do NOT modify content.
+2. If script says: "${visualLabel}: A cat is sleeping." -> JSON must be: "image_prompt": "A cat is sleeping."
+3. Return pure JSON only.
+
+JSON structure:`;
+    }
+};
+
+const getVoiceoverExtractionPrompt = (language: Language, fullScript: string) => {
+    const voiceoverLabel = language === 'vi' ? 'Lời dẫn' : 'Voice-over';
+    const contentLabel = language === 'vi' ? 'Nội dung Lời dẫn nguyên văn' : 'Original Voice-over content';
+    
+    if (language === 'vi') {
+        return `
+Kịch bản chi tiết cần trích xuất Voice Over:
+
+${fullScript}
+
+NHIỆM VỤ (PURE EXTRACTION):
+Trích xuất NGUYÊN VĂN nội dung mục "${voiceoverLabel}" (Voice Over) của từng cảnh.
+
+YÊU CẦU BẮT BUỘC:
+1. TUYỆT ĐỐI KHÔNG CHỈNH SỬA, KHÔNG THÊM BỚT TỪ.
+2. KHÔNG gộp câu, KHÔNG tách câu.
+3. Kịch bản gốc viết thế nào, trích xuất y hệt thế ấy.
+4. Bỏ qua mọi yêu cầu về độ dài (min/max words). Độ dài là do kịch bản gốc quyết định.
+
+Output format:
+Scene X: [${contentLabel}]
+Scene Y: [${contentLabel}]
+...
+`;
+    } else {
+        return `
+Detailed script for Voice Over extraction:
+
+${fullScript}
+
+TASK (PURE EXTRACTION):
+Extract the ORIGINAL content of the "${voiceoverLabel}" section for each scene.
+
+MANDATORY REQUIREMENTS:
+1. ABSOLUTELY DO NOT MODIFY, DO NOT ADD OR REMOVE WORDS.
+2. Do NOT combine sentences, do NOT split sentences.
+3. Extract exactly as written in the original script.
+4. Ignore any length requirements (min/max words). Length is determined by the original script.
+
+Output format:
+Scene X: [${contentLabel}]
+Scene Y: [${contentLabel}]
+...
+`;
+    }
+};
+
+// ============================================================================
 // STEP 1: GET NEWS AND EVENTS
 // ============================================================================
 
@@ -634,7 +763,8 @@ ${getFormatRules(language, startScene, endScene)}
                 targetWords,
                 tolerance,
                 systemPrompt,
-                currentContent
+                currentContent,
+                language
             );
 
             const successfulFixes = fixes.filter(f => f.isValidAfterFix && f.fixedContent);
@@ -654,7 +784,7 @@ ${getFormatRules(language, startScene, endScene)}
             }
 
             if (successfulFixes.length > 0) {
-                currentContent = autoFixEngine.applyFixes(currentContent, successfulFixes);
+                currentContent = autoFixEngine.applyFixes(currentContent, successfulFixes, language);
                 console.log(`✅ Fixed ${successfulFixes.length} scenes in attempt ${fixAttempt}`);
             }
 
@@ -702,6 +832,7 @@ export const createScriptBatch = async (
     previousContent: string,
     batchIndex: number,
     sceneCount: number,
+    language: Language = 'vi',
     onRetry?: (reason: string, attempt: number) => void
 ): Promise<string> => {
     setFallbackApiKey(apiKey);
@@ -714,24 +845,7 @@ export const createScriptBatch = async (
     const adapter = getAdapterForStep(3);
     console.log(`🎬 Step 3 Batch ${batchIndex + 1} using model: ${getModelIdForStep(3)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
 
-    const userPrompt = `
-Dàn ý tổng quát (Tổng số cảnh yêu cầu: ${sceneCount}):
-${outline}
-
-Nội dung kịch bản đã viết ở các phần trước (Context):
-${previousContent.slice(-2000)} 
-...(Context bị cắt bớt)...
-
-NHIỆM VỤ HIỆN TẠI (Batch xử lý cảnh ${startScene} -> ${endScene}):
-Hãy viết kịch bản chi tiết CHO ĐÚNG các cảnh từ **Scene ${startScene}** đến **Scene ${endScene}**.
-
-QUY TẮC:
-1. Bắt đầu ngay với "**Scene ${startScene}:**".
-2. Viết lần lượt đến "**Scene ${endScene}**".
-3. KHÔNG viết vượt quá Scene ${endScene} trong lần trả lời này.
-4. Giữ đúng format: Visual và Audio/Voice Over.
-5. Nếu đây là batch cuối cùng (Scene ${endScene} == ${sceneCount}), hãy viết thêm phần Kết luận (Conclusion) nếu cần.
-`;
+    const userPrompt = getScriptBatchPrompt(language, outline, previousContent, startScene, endScene, sceneCount);
 
     const response = await adapter.generateContent({
         systemPrompt,
@@ -749,6 +863,7 @@ export const generatePromptsBatch = async (
     apiKey: string,
     scriptChunk: string,
     systemPrompt: string,
+    language: Language = 'vi',
     onRetry?: (reason: string, attempt: number) => void
 ): Promise<string> => {
     setFallbackApiKey(apiKey);
@@ -756,19 +871,7 @@ export const generatePromptsBatch = async (
     const adapter = getAdapterForStep(4);
     console.log(`🎨 Step 4 using model: ${getModelIdForStep(4)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
 
-    const userPrompt = `
-Phần kịch bản cần xử lý:
-${scriptChunk}
-
-NHIỆM VỤ (PURE EXTRACTION):
-Trích xuất NGUYÊN VĂN nội dung mục "Hình ảnh" của từng cảnh thành JSON.
-
-YÊU CẦU BẮT BUỘC:
-1. KHÔNG sáng tạo thêm. KHÔNG chỉnh sửa nội dung.
-2. Nếu kịch bản ghi: "Hình ảnh: Một con mèo đang ngủ." -> JSON phải là: "image_prompt": "Một con mèo đang ngủ."
-3. Chỉ trả về JSON thuần túy.
-
-Cấu trúc JSON:
+    const userPrompt = getPromptsBatchPrompt(language, scriptChunk);
 [
   {
     "id": "Scene X",
@@ -796,6 +899,7 @@ export const extractVoiceOver = async (
     systemPrompt: string,
     minWords: number,
     maxWords: number,
+    language: Language = 'vi',
     onRetry?: (reason: string, attempt: number) => void
 ): Promise<string> => {
     setFallbackApiKey(apiKey);
@@ -803,25 +907,7 @@ export const extractVoiceOver = async (
     const adapter = getAdapterForStep(5);
     console.log(`🎙️ Step 5 using model: ${getModelIdForStep(5)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
 
-    const userPrompt = `
-Kịch bản chi tiết cần trích xuất Voice Over:
-
-${fullScript}
-
-NHIỆM VỤ (PURE EXTRACTION):
-Trích xuất NGUYÊN VĂN nội dung mục "Lời dẫn" (Voice Over) của từng cảnh.
-
-YÊU CẦU BẮT BUỘC:
-1. TUYỆT ĐỐI KHÔNG CHỈNH SỬA, KHÔNG THÊM BỚT TỪ.
-2. KHÔNG gộp câu, KHÔNG tách câu.
-3. Kịch bản gốc viết thế nào, trích xuất y hệt thế ấy.
-4. Bỏ qua mọi yêu cầu về độ dài (min/max words). Độ dài là do kịch bản gốc quyết định.
-
-Output format:
-Scene X: [Nội dung Lời dẫn nguyên văn]
-Scene Y: [Nội dung Lời dẫn nguyên văn]
-...
-`;
+    const userPrompt = getVoiceoverExtractionPrompt(language, fullScript);
 
     const response = await adapter.generateContent({
         systemPrompt,

@@ -376,7 +376,7 @@ export default function Home() {
       let fullScript = "";
       for (let b = 0; b < totalBatches; b++) {
         setProgress({ current: 3, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Viết Script Batch ${b + 1}/${totalBatches}...` });
-        const chunk = await createScriptBatch(apiKey, outputs[2], getPromptContentById(selectedPromptIds[3], promptsLibrary), fullScript, b, sceneCount);
+        const chunk = await createScriptBatch(apiKey, outputs[2], getPromptContentById(selectedPromptIds[3], promptsLibrary), fullScript, b, sceneCount, language);
         if (chunk.includes("END_OF_SCRIPT")) { fullScript += "\n" + chunk.replace("END_OF_SCRIPT", "").trim(); break; }
         fullScript += "\n" + chunk;
       }
@@ -384,46 +384,10 @@ export default function Home() {
       await wait(delayBetweenSteps);
 
       // Step 4
-      setProgress({ current: 4, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Trích xuất Prompts...` });
-      const chunks = splitScriptIntoChunks(outputs[3]);
-      const jsons = [];
-      for (const chunk of chunks) jsons.push(await generatePromptsBatch(apiKey, chunk, getPromptContentById(selectedPromptIds[4], promptsLibrary)));
-      outputs[4] = mergePromptJsons(jsons);
-      await wait(delayBetweenSteps);
-
-      // Step 5
-      setProgress({ current: 5, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Tách Voice...` });
-      const minVO = batchTargetWords - batchWordTolerance;
-      const maxVO = batchTargetWords + batchWordTolerance;
-      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), minVO, maxVO);
-      await wait(delayBetweenSteps);
-
-      // Step 6
-      setProgress({ current: 6, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Metadata...` });
-      outputs[6] = await createMetadata(apiKey, outputs[3], getPromptContentById(selectedPromptIds[6], promptsLibrary));
-      return outputs;
-    } catch (e: any) { throw new Error(e.message); }
-  };
-
-  const runBatchQueue = async () => {
-    if (!apiKey) { alert("Thiếu API Key."); return; }
-    if (batchQueue.length === 0) return;
-    setIsProcessingBatch(true);
-    const queueCopy = [...batchQueue];
-    for (let i = 0; i < queueCopy.length; i++) {
-      const job = queueCopy[i];
-      setBatchQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'processing' } : j));
-      try {
-        const outputs = await processSingleScript(job.input, i + 1, queueCopy.length);
-        setProcessedJobs(prev => [...prev, { ...job, status: 'completed', outputs }]);
-        setBatchQueue(prev => prev.filter(j => j.id !== job.id));
-      } catch (e: any) {
-        setProcessedJobs(prev => [...prev, { ...job, status: 'failed', error: e.message, outputs: {} }]);
-        setBatchQueue(prev => prev.filter(j => j.id !== job.id));
-      }
-      if (i < queueCopy.length - 1) {
-        setProgress({ current: 0, total: 0, message: `Waiting ${delayBetweenJobs}ms...` });
-        await new Promise(r => setTimeout(r, delayBetweenJobs));
+      const totalPromptBatches = Math.ceil(chunks.length);
+      for (let i = 0; i < chunks.length; i++) {
+        setProgress({ current: 4, total: 6, message: `Prompts ${i + 1}/${chunks.length}...` });
+        jsons.push(await generatePromptsBatch(apiKey, chunks[i], getPromptContentById(selectedPromptIds[4], promptsLibrary), language));
       }
     }
     setIsProcessingBatch(false); setProgress(null);
@@ -625,7 +589,7 @@ export default function Home() {
       for (let b = scriptStartBatch; b < totalScriptBatches; b++) {
         await updateJobProgress(3, `Script ${b + 1}/${totalScriptBatches}`, { completedBatches: b });
 
-        const chunk = await createScriptBatch(apiKey, outputs[2], getPromptContentById(selectedPromptIds[3], promptsLibrary), fullScript, b, batchSceneCount, (r, a) => updateJobProgress(3, `Script ${b + 1}/${totalScriptBatches} (Retry ${a}: ${r})`));
+        const chunk = await createScriptBatch(apiKey, outputs[2], getPromptContentById(selectedPromptIds[3], promptsLibrary), fullScript, b, batchSceneCount, language, (r, a) => updateJobProgress(3, `Script ${b + 1}/${totalScriptBatches} (Retry ${a}: ${r})`));
 
         if (chunk.includes("END_OF_SCRIPT")) { fullScript += "\n" + chunk.replace("END_OF_SCRIPT", "").trim(); break; }
         fullScript += "\n" + chunk;
@@ -652,9 +616,9 @@ export default function Home() {
             // Remove or replace image file references
             const cleanedChunk = chunk.replace(/image\.png/g, '').replace(/\.png/g, '');
             
-            jsons.push(await generatePromptsBatch(apiKey, cleanedChunk, getPromptContentById(selectedPromptIds[4], promptsLibrary), (r, a) => updateJobProgress(4, `Prompts ${i + 1}/${chunks.length} (Retry ${a}: ${r})`)));
+            jsons.push(await generatePromptsBatch(apiKey, cleanedChunk, getPromptContentById(selectedPromptIds[4], promptsLibrary), language, (r, a) => updateJobProgress(4, `Prompts ${i + 1}/${chunks.length} (Retry ${a}: ${r})`)));
           } else {
-            jsons.push(await generatePromptsBatch(apiKey, chunk, getPromptContentById(selectedPromptIds[4], promptsLibrary), (r, a) => updateJobProgress(4, `Prompts ${i + 1}/${chunks.length} (Retry ${a}: ${r})`)));
+            jsons.push(await generatePromptsBatch(apiKey, chunk, getPromptContentById(selectedPromptIds[4], promptsLibrary), language, (r, a) => updateJobProgress(4, `Prompts ${i + 1}/${chunks.length} (Retry ${a}: ${r})`)));
           }
         }
         outputs[4] = mergePromptJsons(jsons);
@@ -673,7 +637,7 @@ export default function Home() {
 
       // Step 5: Tách Voice Over
       await updateJobProgress(5, 'Voice Over...');
-      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), batchTargetWords - batchWordTolerance, batchTargetWords + batchWordTolerance, (r, a) => updateJobProgress(5, `Voice Over (Retry ${a}: ${r})`));
+      outputs[5] = await extractVoiceOver(apiKey, outputs[3], getPromptContentById(selectedPromptIds[5], promptsLibrary), batchTargetWords - batchWordTolerance, batchTargetWords + batchWordTolerance, language, (r, a) => updateJobProgress(5, `Voice Over (Retry ${a}: ${r})`));
 
       // Step 6: Tạo Metadata
       await updateJobProgress(6, 'Metadata...');
@@ -905,7 +869,7 @@ export default function Home() {
           let fullScript = "";
           for (let i = 0; i < totalBatches; i++) {
             setProgress({ current: i + 1, total: totalBatches, message: `Batch ${i + 1}/${totalBatches}` });
-            const chunk = await createScriptBatch(apiKey, input, promptContent, fullScript, i, sceneCount);
+            const chunk = await createScriptBatch(apiKey, input, promptContent, fullScript, i, sceneCount, language);
             if (chunk.includes("END_OF_SCRIPT")) { fullScript += "\n" + chunk.replace("END_OF_SCRIPT", "").trim(); break; }
             fullScript += "\n" + chunk;
           }
@@ -921,9 +885,9 @@ export default function Home() {
               const chunk = chunks[i];
               if (chunk.includes('image.png') || chunk.includes('.png')) {
                 const cleanedChunk = chunk.replace(/image\.png/g, '').replace(/\.png/g, '');
-                jsons.push(await generatePromptsBatch(apiKey, cleanedChunk, promptContent));
+                jsons.push(await generatePromptsBatch(apiKey, cleanedChunk, promptContent, language));
               } else {
-                jsons.push(await generatePromptsBatch(apiKey, chunk, promptContent));
+                jsons.push(await generatePromptsBatch(apiKey, chunk, promptContent, language));
               }
             }
             result = mergePromptJsons(jsons);
@@ -939,7 +903,7 @@ export default function Home() {
         } else if (currentStep === 5) {
           const min = singleTargetWords - singleTolerance;
           const max = singleTargetWords + singleTolerance;
-          result = await extractVoiceOver(apiKey, input, promptContent, min, max);
+          result = await extractVoiceOver(apiKey, input, promptContent, min, max, language);
         }
         else if (currentStep === 6) result = await createMetadata(apiKey, input, promptContent);
       }
