@@ -928,8 +928,6 @@ export const createMetadata = async (
     setFallbackApiKey(apiKey);
 
     const adapter = getAdapterForStep(6);
-    console.log(`Step 6 using model: ${getModelIdForStep(6)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
-
     const response = await adapter.generateContent({
         systemPrompt,
         userMessage: `Nội dung kịch bản:\n${detailedScript.slice(0, 30000)}`,
