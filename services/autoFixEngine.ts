@@ -311,9 +311,6 @@ ${language === 'vi' ? 'YÊU CẦU:' : 'REQUIREMENTS:'}
         const currentLabel = language === 'vi' ? 'Nội dung hiện tại' : 'Current content';
         const formatLabel = language === 'vi' ? 'FORMAT BẮT BUỘC' : 'REQUIRED FORMAT';
         const returnLabel = language === 'vi' ? 'CHỈ TRẢ VỀ NỘI DUNG ĐÃ SỬA, KHÔNG GIẢI THÍCH.' : 'ONLY RETURN FIXED CONTENT, NO EXPLANATIONS.';
-        const imageLabel = language === 'vi' ? 'Hình ảnh' : 'Image';
-        const voiceoverLabel = language === 'vi' ? 'Lời dẫn' : 'Voice-over';
-        const wordUnit = config.wordUnit;
 
         scenesToFix.forEach((result, idx) => {
             if (result.sceneData) {
