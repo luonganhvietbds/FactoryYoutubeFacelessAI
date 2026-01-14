@@ -143,7 +143,7 @@ const callGemini = async (
 
 // Bước 1: Lấy tin tức
 export const getNewsAndEvents = async (apiKey: string, keyword: string, systemPrompt: string, onRetry?: (reason: string, attempt: number) => void): Promise<string> => {
-    return callGemini(apiKey, systemPrompt, `Chủ đề/Từ khóa cần tìm kiếm: "${keyword}"`, true, onRetry);
+    return callGemini(apiKey, systemPrompt, `Topic/Keyword to search: "${keyword}"`, true, onRetry);
 };
 
 // Bước 2: Tạo Dàn Ý - V5: Graceful Accept Mode (Always Complete)
@@ -458,5 +458,5 @@ export const mergePromptJsons = (jsonStrings: string[]): string => {
 
 // Bước 6: Metadata
 export const createMetadata = async (apiKey: string, detailedScript: string, systemPrompt: string, onRetry?: (reason: string, attempt: number) => void): Promise<string> => {
-    return callGemini(apiKey, systemPrompt, `Nội dung kịch bản:\n${detailedScript.slice(0, 30000)}`, false, onRetry);
+    return callGemini(apiKey, systemPrompt, "Script content:\n" + detailedScript.slice(0, 30000), false, onRetry);
 };

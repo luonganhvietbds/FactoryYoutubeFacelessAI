@@ -302,7 +302,7 @@ export const getNewsAndEvents = async (
     const adapter = getAdapterForStep(1);
     const request: AIRequest = {
         systemPrompt,
-        userMessage: `Chủ đề/Từ khóa cần tìm kiếm: "${keyword}"`,
+        userMessage: `Topic/Keyword to search: "${keyword}"`,
         useSearch: true, // Step 1 always uses Google Search grounding
     };
 
