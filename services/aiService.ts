@@ -905,7 +905,7 @@ export const extractVoiceOver = async (
     setFallbackApiKey(apiKey);
 
     const adapter = getAdapterForStep(5);
-    console.log(`🎙️ Step 5 using model: ${getModelIdForStep(5)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
+    console.log(`Step 5 using model: ${getModelIdForStep(5)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
 
     const userPrompt = getVoiceoverExtractionPrompt(language, fullScript);
 
