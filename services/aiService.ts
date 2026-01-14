@@ -482,7 +482,7 @@ ${getFormatRules(language, startScene, endScene)}
             }
 
             if (warnings.length === 0) {
-                console.log(`✅ Batch ${batchIndex + 1} Passed validation on Attempt ${attempts + 1}`);
+                console.log(`Batch ${batchIndex + 1} Passed validation on Attempt ${attempts + 1}`);
                 return lastResult;
             }
 
@@ -528,7 +528,7 @@ ${getFormatRules(language, startScene, endScene)}
             recoveredScenesMap.forEach((block, sceneNum) => {
                 if (!allScenesMap.has(sceneNum)) {
                     allScenesMap.set(sceneNum, block);
-                    console.log(`✅ Recovered Scene ${sceneNum}`);
+                    console.log(`Recovered Scene ${sceneNum}`);
                 }
             });
 
@@ -751,7 +751,7 @@ ${getFormatRules(language, startScene, endScene)}
         );
 
         if (validationResult.completionRate >= 100 && validationResult.invalidScenes.length === 0) {
-            console.log(`✅ Auto-Fix Batch ${batchIndex + 1} Attempt ${fixAttempt}: All scenes valid`);
+            console.log(`Auto-Fix Batch ${batchIndex + 1} Attempt ${fixAttempt}: All scenes valid`);
             break;
         }
 
@@ -785,7 +785,7 @@ ${getFormatRules(language, startScene, endScene)}
 
             if (successfulFixes.length > 0) {
                 currentContent = autoFixEngine.applyFixes(currentContent, successfulFixes, language);
-                console.log(`✅ Fixed ${successfulFixes.length} scenes in attempt ${fixAttempt}`);
+                console.log(`Fixed ${successfulFixes.length} scenes in attempt ${fixAttempt}`);
             }
 
             if (failedFixes.length > 0 && fixAttempt === MAX_AUTO_FIX_ATTEMPTS) {

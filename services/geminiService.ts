@@ -280,7 +280,7 @@ Lời dẫn: [Nội dung lời dẫn] (Số từ)
 
             // 3. Decision Logic
             if (warnings.length === 0 && correctedScenes.length >= expectedSceneCount) {
-                console.log(`✅ Batch ${batchIndex + 1} Passed validation on Attempt ${attempts + 1}`);
+                console.log(`Batch ${batchIndex + 1} Passed validation on Attempt ${attempts + 1}`);
                 return lastResult; // Success!
             }
 
