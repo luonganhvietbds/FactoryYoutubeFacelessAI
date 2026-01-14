@@ -363,9 +363,9 @@ export default function Home() {
       // Step 2 (single-mode) - Note: warnings ignored in single mode for simplicity
       const totalOutlineBatches = Math.ceil(sceneCount / 3);
       let fullOutline = "";
-      for (let b = 0; b < totalOutlineBatches; b++) {
+        for (let b = 0; b < totalOutlineBatches; b++) {
         setProgress({ current: 2, total: 6, message: `[Job ${jobIndex}/${totalJobs}] Outline Batch ${b + 1}/${totalOutlineBatches}...` });
-        const result = await createOutlineBatch(apiKey, input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, sceneCount, batchTargetWords, batchWordTolerance);
+        const result = await createOutlineBatch(apiKey, input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, sceneCount, batchTargetWords, batchWordTolerance, language);
         if (result.content === "END_OF_OUTLINE") break;
         fullOutline += "\n" + result.content;
       } outputs[2] = fullOutline.trim();
@@ -576,10 +576,10 @@ export default function Home() {
         console.log(`🔄 Resuming Job ${job.id} Step 2 from Batch ${startBatch}`);
       }
 
-      for (let b = startBatch; b < totalOutlineBatches; b++) {
+        for (let b = startBatch; b < totalOutlineBatches; b++) {
         await updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches}`, { completedBatches: b });
 
-        const result = await createOutlineBatchWithAutoFix(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchTargetWords, batchWordTolerance, (r, a) => updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches} (Retry ${a}: ${r})`));
+        const result = await createOutlineBatchWithAutoFix(apiKey, job.input, getPromptContentById(selectedPromptIds[2], promptsLibrary), fullOutline, b, batchSceneCount, batchTargetWords, batchWordTolerance, language, (r, a) => updateJobProgress(2, `Outline ${b + 1}/${totalOutlineBatches} (Retry ${a}: ${r})`));
 
         if (result.content === "END_OF_OUTLINE") break;
         fullOutline += "\n" + result.content;
@@ -888,7 +888,7 @@ export default function Home() {
             setProgress({
               current: b + 1, total: totalBatches, message: `Creating Outline Batch ${b + 1}/${totalBatches}...`
             });
-            const outlineResult = await createOutlineBatchWithAutoFix(apiKey, input, promptContent, fullOutline, b, sceneCount, targetWords, tolerance);
+            const outlineResult = await createOutlineBatchWithAutoFix(apiKey, input, promptContent, fullOutline, b, sceneCount, targetWords, tolerance, language);
             if (outlineResult.content === "END_OF_OUTLINE") break;
             fullOutline += "\n" + outlineResult.content;
 
