@@ -30,6 +30,7 @@ import { UserData } from '@/lib/types';
 import StepProgressBar from '@/components/StepProgressBar';
 import BatchResumeModal from '@/components/BatchResumeModal';
 import QualityReport from '@/components/QualityReport';
+import PlanMode from '@/components/PlanMode';
 import WandIcon from '@/components/icons/WandIcon';
 import LoadingSpinnerIcon from '@/components/icons/LoadingSpinnerIcon';
 import CopyIcon from '@/components/icons/CopyIcon';
@@ -88,6 +89,7 @@ export default function Home() {
   // Permission checks
   const { currentUser, userData, isAdmin, logout, addToast } = useAuth();
   const canUseBatchMode = userData?.permissions?.batchModeEnabled === true;
+  const canUsePlanMode = userData?.permissions?.multiIdeaEnabled === true;
   const hasAllPackAccess = userData?.permissions?.allowedPackIds?.includes('*');
   const allowedPackIds = userData?.permissions?.allowedPackIds || [];
 
@@ -124,6 +126,7 @@ export default function Home() {
 
   // --- BATCH MODE STATE ---
   const [isBatchMode, setIsBatchMode] = useState(false);
+  const [isPlanMode, setIsPlanMode] = useState(false);
   const [batchInputRaw, setBatchInputRaw] = useState('');
   const [batchQueue, setBatchQueue] = useState<BatchJob[]>([]);
   const [processedJobs, setProcessedJobs] = useState<BatchJob[]>([]);
@@ -294,6 +297,14 @@ export default function Home() {
       return;
     }
     setIsBatchMode(!isBatchMode);
+  };
+
+  const handleTogglePlanMode = () => {
+    if (!canUsePlanMode) {
+      addToast('error', 'Bạn không có quyền sử dụng Multi-Idea Plan Mode. Liên hệ Admin để được cấp quyền.');
+      return;
+    }
+    setIsPlanMode(!isPlanMode);
   };
 
   const handleAdminLogin = () => {
@@ -1124,6 +1135,14 @@ export default function Home() {
               >
                 {isBatchMode ? '📦 Batch Mode' : '📦 Batch Mode'}
               </button>
+              <button
+                onClick={handleTogglePlanMode}
+                disabled={!canUsePlanMode}
+                className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${isPlanMode ? 'bg-purple-600 text-white shadow-lg' : canUsePlanMode ? 'bg-slate-800 text-slate-300 border border-slate-600' : 'bg-slate-800/50 text-slate-500 border border-slate-700 cursor-not-allowed opacity-50'}`}
+                title={!canUsePlanMode ? 'Bạn không có quyền sử dụng Multi-Idea Plan Mode' : ''}
+              >
+                {isPlanMode ? '💡 Plan Mode' : '💡 Plan Mode'}
+              </button>
               <button onClick={handleAdminLogin} className="text-slate-500 hover:text-sky-400 p-2"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M8 11h8" /><path d="M12 7v8" /></svg></button>
               <button
                 onClick={handleDownloadAllZip}
@@ -1503,7 +1522,18 @@ export default function Home() {
                 </div>
               )}
 
-              <div className="mb-10"><StepProgressBar steps={STEPS_CONFIG} currentStep={viewingStep} completedSteps={workflowCompletedSteps} onStepClick={setViewingStep} /></div>
+              {/* ========== PLAN MODE UI ========== */}
+              {isPlanMode && (
+                <div className="space-y-6">
+                  <PlanMode
+                    promptsLibrary={availablePromptsForStep}
+                    selectedPromptIds={selectedPromptIds}
+                  />
+                </div>
+              )}
+
+              {/* ========== SINGLE MODE UI ========== */}
+              {!isPlanMode && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 flex flex-col h-[750px]">
                   <h2 className="text-2xl font-bold mb-1 text-sky-400">{activeStepConfig.title}</h2>
