@@ -306,7 +306,7 @@ export const getNewsAndEvents = async (
         useSearch: true, // Step 1 always uses Google Search grounding
     };
 
-    console.log(`🔍 Step 1 using model: ${getModelIdForStep(1)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
+    console.log(`Step 1 using model: ${getModelIdForStep(1)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
 
     const response = await adapter.generateContent(request);
     return response.content;
@@ -344,7 +344,7 @@ export const createOutlineBatch = async (
     if (startScene > sceneCount) return { content: "END_OF_OUTLINE", warnings: [] };
 
     const adapter = getAdapterForStep(2);
-    console.log(`📝 Step 2 Batch ${batchIndex + 1} using model: ${getModelIdForStep(2)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
+    console.log(`Step 2 Batch ${batchIndex + 1} using model: ${getModelIdForStep(2)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
 
     let attempts = 0;
     const MAX_RETRIES = 5; // Increased from 3 for better scene recovery
@@ -843,7 +843,7 @@ export const createScriptBatch = async (
     if (startScene > sceneCount) return "END_OF_SCRIPT";
 
     const adapter = getAdapterForStep(3);
-    console.log(`🎬 Step 3 Batch ${batchIndex + 1} using model: ${getModelIdForStep(3)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
+    console.log(`Step 3 Batch ${batchIndex + 1} using model: ${getModelIdForStep(3)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
 
     const userPrompt = getScriptBatchPrompt(language, outline, previousContent, startScene, endScene, sceneCount);
 
@@ -869,7 +869,7 @@ export const generatePromptsBatch = async (
     setFallbackApiKey(apiKey);
 
     const adapter = getAdapterForStep(4);
-    console.log(`🎨 Step 4 using model: ${getModelIdForStep(4)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
+    console.log(`Step 4 using model: ${getModelIdForStep(4)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
 
     const userPrompt = getPromptsBatchPrompt(language, scriptChunk);
 [
@@ -928,7 +928,7 @@ export const createMetadata = async (
     setFallbackApiKey(apiKey);
 
     const adapter = getAdapterForStep(6);
-    console.log(`📋 Step 6 using model: ${getModelIdForStep(6)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
+    console.log(`Step 6 using model: ${getModelIdForStep(6)}${isSafeMode() ? ' (Safe Mode)' : ''}`);
 
     const response = await adapter.generateContent({
         systemPrompt,
