@@ -236,9 +236,26 @@ export default function Home() {
 
     initApp();
 
+    // Listen for prompt changes from Plan Mode
+    const handlePlanModePromptChange = (e: CustomEvent) => {
+      const { stepId, promptId } = e.detail;
+      setSelectedPromptIds(prev => ({ ...prev, [stepId]: promptId }));
+    };
+    window.addEventListener('planModePromptChange', handlePlanModePromptChange as EventListener);
+
     const savedApiKey = localStorage.getItem('geminiApiKey');
     if (savedApiKey) { setApiKey(savedApiKey); setSaveApiKey(true); }
   }, []);
+
+  // Cleanup event listener
+  useEffect(() => {
+    const handlePlanModePromptChange = (e: CustomEvent) => {
+      const { stepId, promptId } = e.detail;
+      setSelectedPromptIds(prev => ({ ...prev, [stepId]: promptId }));
+    };
+    window.addEventListener('planModePromptChange', handlePlanModePromptChange as EventListener);
+    return () => window.removeEventListener('planModePromptChange', handlePlanModePromptChange as EventListener);
+  }, [setSelectedPromptIds]);
 
   // --- SAVING EFFECTS ---
   useEffect(() => {
@@ -1526,8 +1543,9 @@ export default function Home() {
               {isPlanMode && (
                 <div className="space-y-6">
                   <PlanMode
-                    promptsLibrary={availablePromptsForStep}
+                    promptsLibrary={promptsLibrary}
                     selectedPromptIds={selectedPromptIds}
+                    selectedPackId={selectedPackId}
                   />
                 </div>
               )}

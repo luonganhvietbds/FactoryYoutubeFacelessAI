@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { getPromptContentById } from '@/lib/prompt-utils';
 import { PlanSession, PlanProgress, PlanConfig, SystemPromptData } from '@/lib/types';
@@ -11,11 +11,13 @@ import PlanResults from './PlanResults';
 interface PlanModeProps {
     promptsLibrary: SystemPromptData[];
     selectedPromptIds: Record<number, string>;
+    selectedPackId: string | null;
 }
 
 const PlanMode: React.FC<PlanModeProps> = ({
     promptsLibrary,
-    selectedPromptIds
+    selectedPromptIds,
+    selectedPackId
 }) => {
     const { userData, addToast } = useAuth();
     const [keywords, setKeywords] = useState('');
@@ -33,6 +35,15 @@ const PlanMode: React.FC<PlanModeProps> = ({
     const keywordList = keywords.split('\n').filter(k => k.trim());
     const validKeywordCount = keywordList.length;
 
+    // Filter prompts by selected pack
+    const promptsForStep1 = useMemo(() => {
+        if (!selectedPackId) return promptsLibrary.filter(p => p.stepId === 1);
+        return promptsLibrary.filter(p => p.stepId === 1 && p.packId === selectedPackId);
+    }, [promptsLibrary, selectedPackId]);
+
+    // Get selected prompt ID for step 1
+    const selectedPromptId = selectedPromptIds[1] || '';
+
     const handleGenerate = useCallback(async () => {
         if (!userData) {
             addToast('error', 'Vui lòng đăng nhập');
@@ -41,6 +52,11 @@ const PlanMode: React.FC<PlanModeProps> = ({
 
         if (!hasPermission) {
             addToast('error', 'Bạn không có quyền sử dụng Multi-Idea Plan Mode');
+            return;
+        }
+
+        if (!selectedPackId) {
+            addToast('error', 'Vui lòng chọn và kích hoạt Pack để sử dụng Plan Mode');
             return;
         }
 
@@ -60,9 +76,10 @@ const PlanMode: React.FC<PlanModeProps> = ({
             return;
         }
 
-        const promptContent = getPromptContentById(selectedPromptIds[1], promptsLibrary);
+        // Get prompt from selected pack
+        const promptContent = getPromptContentById(selectedPromptId, promptsForStep1);
         if (!promptContent) {
-            addToast('error', 'Không tìm thấy prompt cho Step 1');
+            addToast('error', 'Không tìm thấy prompt cho Step 1 trong Pack đã chọn');
             return;
         }
 
@@ -89,7 +106,7 @@ const PlanMode: React.FC<PlanModeProps> = ({
         } finally {
             setIsRunning(false);
         }
-    }, [keywords, config, userData, hasPermission, promptsLibrary, selectedPromptIds, addToast]);
+    }, [keywords, config, userData, hasPermission, selectedPackId, selectedPromptId, promptsForStep1, addToast]);
 
     const handleCancel = useCallback(() => {
         if (planServiceRef.current) {
@@ -134,7 +151,7 @@ const PlanMode: React.FC<PlanModeProps> = ({
 
     return (
         <div className="space-y-6">
-            {/* Header */}
+            {/* Header with Pack Info */}
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-2xl font-bold text-white">💡 Multi-Idea Plan Mode</h2>
@@ -142,6 +159,48 @@ const PlanMode: React.FC<PlanModeProps> = ({
                         Tạo hàng loạt ý tưởng kịch bản từ danh sách từ khóa
                     </p>
                 </div>
+                {selectedPackId ? (
+                    <div className="flex items-center gap-2 bg-purple-900/30 px-3 py-1.5 rounded-lg border border-purple-500/30">
+                        <span className="text-purple-400 text-sm">📦</span>
+                        <span className="text-purple-300 text-sm font-medium">Pack đã chọn</span>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-2 bg-red-900/30 px-3 py-1.5 rounded-lg border border-red-500/30">
+                        <span className="text-red-400 text-sm">⚠️</span>
+                        <span className="text-red-300 text-sm">Chưa chọn Pack</span>
+                    </div>
+                )}
+            </div>
+
+            {/* Prompt Selection for Step 1 */}
+            <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
+                <div className="flex items-center justify-between mb-3">
+                    <label className="block text-sm font-medium text-slate-300">
+                        🤖 AI Persona (Step 1)
+                    </label>
+                    {!selectedPackId && (
+                        <span className="text-xs text-amber-400">Cần chọn Pack để sử dụng</span>
+                    )}
+                </div>
+                <select
+                    value={selectedPromptId}
+                    onChange={(e) => {
+                        // Update selected prompt - parent will handle state update via selectedPromptIds
+                        const newSelected = { ...selectedPromptIds, [1]: e.target.value };
+                        // Trigger custom event for parent to update
+                        window.dispatchEvent(new CustomEvent('planModePromptChange', { detail: { stepId: 1, promptId: e.target.value } }));
+                    }}
+                    disabled={!selectedPackId || isRunning}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {promptsForStep1.length === 0 ? (
+                        <option value="">Không có prompt cho Step 1 trong Pack này</option>
+                    ) : (
+                        promptsForStep1.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                        ))
+                    )}
+                </select>
             </div>
 
             {/* Main Content */}
