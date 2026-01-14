@@ -11,8 +11,9 @@ import {
 import { sceneValidator } from '@/lib/validator';
 import { getAdapterForStep, getModelIdForStep, isSafeMode } from '@/lib/ai/factory';
 import { AIRequest } from '@/lib/ai/types';
-import { countVietnameseWords } from '@/lib/wordCounter';
+import { countWords } from '@/lib/wordCounter';
 import { logError } from '@/lib/errorTracker';
+import { Language, LANGUAGE_CONFIGS } from '@/lib/languageConfig';
 
 const AUTO_FIX_TIMEOUT = 30000;
 const MAX_SCENES_PER_FIX = 5;
@@ -24,28 +25,38 @@ export class AutoFixEngine {
         sceneData: SceneData,
         targetWords: number,
         tolerance: number,
-        systemPrompt: string
+        systemPrompt: string,
+        language: Language = 'vi'
     ): Promise<FixedScene> {
         const minWords = targetWords - tolerance;
         const maxWords = targetWords + tolerance;
+        const config = LANGUAGE_CONFIGS[language];
+        const voiceoverLabel = language === 'vi' ? 'Lời dẫn' : 'Voice-over';
+        const imageLabel = language === 'vi' ? 'Hình ảnh' : 'Image';
+        const wordUnit = config.wordUnit;
 
         const issues = sceneValidator.validateSceneStructure(
             `Scene ${sceneData.sceneNum}: ${sceneData.title}\n` +
-            `Hình ảnh: ${sceneData.visual}\n` +
-            `Lời dẫn: ${sceneData.voiceover}`
+            `${imageLabel}: ${sceneData.visual}\n` +
+            `${voiceoverLabel}: ${sceneData.voiceover}`,
+            language
         );
 
         const fixReasons = issues.issues.map(issue => {
             switch (issue) {
-                case 'missing_visual': return 'Thiếu mô tả hình ảnh';
-                case 'missing_voiceover': return 'Thiếu lời dẫn';
-                case 'visual_too_short': return 'Mô tả hình ảnh quá ngắn';
-                case 'voiceover_missing': return 'Thiếu voiceover';
+                case 'missing_visual':
+                    return language === 'vi' ? 'Thiếu mô tả hình ảnh' : 'Missing visual description';
+                case 'missing_voiceover':
+                    return language === 'vi' ? 'Thiếu lời dẫn' : 'Missing voiceover';
+                case 'visual_too_short':
+                    return language === 'vi' ? 'Mô tả hình ảnh quá ngắn' : 'Visual description too short';
+                case 'voiceover_missing':
+                    return language === 'vi' ? 'Thiếu voiceover' : 'Missing voiceover';
                 default: return issue;
             }
         });
 
-        const userPrompt = this.buildFixPrompt(sceneData, fixReasons, targetWords, minWords, maxWords);
+        const userPrompt = this.buildFixPrompt(sceneData, fixReasons, targetWords, minWords, maxWords, language);
 
         try {
             const response = await this.callWithTimeout(
@@ -57,11 +68,11 @@ export class AutoFixEngine {
             );
 
             const fixedContent = response.content;
-            const revalidate = sceneValidator.validateSceneStructure(fixedContent);
+            const revalidate = sceneValidator.validateSceneStructure(fixedContent, language);
 
             return {
                 sceneNum: sceneData.sceneNum,
-                originalContent: `Scene ${sceneData.sceneNum}: ${sceneData.title}\nHình ảnh: ${sceneData.visual}\nLời dẫn: ${sceneData.voiceover}`,
+                originalContent: `Scene ${sceneData.sceneNum}: ${sceneData.title}\n${imageLabel}: ${sceneData.visual}\n${voiceoverLabel}: ${sceneData.voiceover}`,
                 fixedContent,
                 fixReasons,
                 isValidAfterFix: revalidate.isValid || (revalidate.sceneData !== null && revalidate.issues.length <= 1)
@@ -70,7 +81,7 @@ export class AutoFixEngine {
             logError(2, `Auto-fix failed for Scene ${sceneData.sceneNum}: ${error.message}`, 'ERROR');
             return {
                 sceneNum: sceneData.sceneNum,
-                originalContent: `Scene ${sceneData.sceneNum}: ${sceneData.title}\nHình ảnh: ${sceneData.visual}\nLời dẫn: ${sceneData.voiceover}`,
+                originalContent: `Scene ${sceneData.sceneNum}: ${sceneData.title}\n${imageLabel}: ${sceneData.visual}\n${voiceoverLabel}: ${sceneData.voiceover}`,
                 fixedContent: '',
                 fixReasons,
                 isValidAfterFix: false
@@ -83,7 +94,8 @@ export class AutoFixEngine {
         targetWords: number,
         tolerance: number,
         systemPrompt: string,
-        context: string
+        context: string,
+        language: Language = 'vi'
     ): Promise<FixedScene[]> {
         if (invalidScenes.length === 0) {
             return [];
@@ -97,9 +109,13 @@ export class AutoFixEngine {
             return [];
         }
 
-        const batchPrompt = this.buildBatchFixPrompt(scenesToFix, targetWords, tolerance, systemPrompt, context);
+        const batchPrompt = this.buildBatchFixPrompt(scenesToFix, targetWords, tolerance, systemPrompt, context, language);
         const minWords = targetWords - tolerance;
         const maxWords = targetWords + tolerance;
+        const config = LANGUAGE_CONFIGS[language];
+        const voiceoverLabel = language === 'vi' ? 'Lời dẫn' : 'Voice-over';
+        const imageLabel = language === 'vi' ? 'Hình ảnh' : 'Image';
+        const wordUnit = config.wordUnit;
 
         try {
             const response = await this.callWithTimeout(
@@ -118,7 +134,7 @@ export class AutoFixEngine {
             );
 
             for (const block of sceneBlocks) {
-                const revalidate = sceneValidator.validateSceneStructure(block);
+                const revalidate = sceneValidator.validateSceneStructure(block, language);
                 const sceneNumMatch = block.match(/Scene\s*(\d+)/i);
 
                 if (sceneNumMatch) {
@@ -128,7 +144,7 @@ export class AutoFixEngine {
                     fixedScenes.push({
                         sceneNum,
                         originalContent: original?.sceneData
-                            ? `Scene ${original.sceneData.sceneNum}: ${original.sceneData.title}\nHình ảnh: ${original.sceneData.visual}\nLời dẫn: ${original.sceneData.voiceover}`
+                            ? `Scene ${original.sceneData.sceneNum}: ${original.sceneData.title}\n${imageLabel}: ${original.sceneData.visual}\n${voiceoverLabel}: ${original.sceneData.voiceover}`
                             : '',
                         fixedContent: block,
                         fixReasons: original?.issues || ['validation_failed'],
@@ -142,7 +158,7 @@ export class AutoFixEngine {
                 if (validationResult.sceneData && !originalFixed.has(validationResult.sceneData.sceneNum)) {
                     fixedScenes.push({
                         sceneNum: validationResult.sceneData.sceneNum,
-                        originalContent: `Scene ${validationResult.sceneData.sceneNum}: ${validationResult.sceneData.title}\nHình ảnh: ${validationResult.sceneData.visual}\nLời dẫn: ${validationResult.sceneData.voiceover}`,
+                        originalContent: `Scene ${validationResult.sceneData.sceneNum}: ${validationResult.sceneData.title}\n${imageLabel}: ${validationResult.sceneData.visual}\n${voiceoverLabel}: ${validationResult.sceneData.voiceover}`,
                         fixedContent: '',
                         fixReasons: validationResult.issues,
                         isValidAfterFix: false
@@ -165,7 +181,7 @@ export class AutoFixEngine {
         }
     }
 
-    applyFixes(originalOutline: string, fixes: FixedScene[]): string {
+    applyFixes(originalOutline: string, fixes: FixedScene[], language: Language = 'vi'): string {
         if (fixes.length === 0) {
             return originalOutline;
         }
@@ -201,37 +217,61 @@ export class AutoFixEngine {
         fixReasons: string[],
         targetWords: number,
         minWords: number,
-        maxWords: number
+        maxWords: number,
+        language: Language = 'vi'
     ): string {
+        const config = LANGUAGE_CONFIGS[language];
+        const voiceoverLabel = language === 'vi' ? 'Lời dẫn' : 'Voice-over';
+        const imageLabel = language === 'vi' ? 'Hình ảnh' : 'Image';
+        const wordUnit = config.wordUnit;
+
+        const taskLabel = language === 'vi' ? '=== NHIỆM VỤ SỬA LỖI SCENE ===' : '=== SCENE FIX TASK ===';
+        const sceneLabel = language === 'vi' ? 'CẢNH CẦN SỬA' : 'SCENE TO FIX';
+        const issueLabel = language === 'vi' ? 'VẤN ĐỀ PHÁT HIỆN' : 'ISSUES DETECTED';
+        const currentLabel = language === 'vi' ? 'NỘI DUNG HIỆN TẠI' : 'CURRENT CONTENT';
+        const fixLabel = language === 'vi' ? 'YÊU CẦU SỬA CHỮA' : 'FIX REQUIREMENTS';
+        const formatLabel = language === 'vi' ? 'FORMAT BẮT BUỘC' : 'REQUIRED FORMAT';
+        const returnLabel = language === 'vi' ? 'CHỈ TRẢ VỀ NỘI DUNG SCENE ĐÃ SỬA, KHÔNG GIẢI THÍCH.' : 'ONLY RETURN THE FIXED SCENE CONTENT, NO EXPLANATIONS.';
+
+        const visualRequirement = language === 'vi'
+            ? 'Đảm bảo "Hình ảnh:" có ít nhất 10 từ mô tả chi tiết'
+            : 'Ensure "Image:" has at least 10 words describing details';
+        const voiceoverRequirement = language === 'vi'
+            ? `Đảm bảo "${voiceoverLabel}:" có độ dài ${targetWords} ${wordUnit} (chấp nhận ${minWords}-${maxWords} ${wordUnit})`
+            : `Ensure "${voiceoverLabel}:" has length of ${targetWords} ${wordUnit} (accept ${minWords}-${maxWords} ${wordUnit})`;
+        const contextRequirement = language === 'vi'
+            ? 'Viết lại nội dung để phù hợp với ngữ cảnh tổng thể'
+            : 'Rewrite content to match overall context';
+
         return `
-=== NHIỆM VỤ SỬA LỖI SCENE ===
+${taskLabel}
 
-CẢNH CẦN SỬA: Scene ${sceneData.sceneNum}
+${sceneLabel}: Scene ${sceneData.sceneNum}
 
-VẤN ĐỀ PHÁT HIỆN:
+${issueLabel}:
 ${fixReasons.map(r => `- ${r}`).join('\n')}
 
-NỘI DUNG HIỆN TẠI:
+${currentLabel}:
 ---
 Scene ${sceneData.sceneNum}: ${sceneData.title}
-Hình ảnh: ${sceneData.visual}
-Lời dẫn: ${sceneData.voiceover}
+${imageLabel}: ${sceneData.visual}
+${voiceoverLabel}: ${sceneData.voiceover}
 ---
 
-YÊU CẦU SỬA CHỮA:
-1. Bổ sung đầy đủ các thành phần bị thiếu
-2. Đảm bảo "Hình ảnh:" có ít nhất 10 từ mô tả chi tiết
-3. Đảm bảo "Lời dẫn:" có độ dài ${targetWords} từ (chấp nhận ${minWords}-${maxWords} từ)
-4. Viết lại nội dung để phù hợp với ngữ cảnh tổng thể
+${fixLabel}:
+1. ${language === 'vi' ? 'Bổ sung đầy đủ các thành phần bị thiếu' : 'Fill in all missing components'}
+2. ${visualRequirement}
+3. ${voiceoverRequirement}
+4. ${contextRequirement}
 
-FORMAT BẮT BUỘC:
+${formatLabel}:
 \`\`\`
-Scene ${sceneData.sceneNum}: [Tên cảnh]
-Hình ảnh: [Mô tả chi tiết - ít nhất 10 từ]
-Lời dẫn: [Nội dung voiceover] (${targetWords} từ)
+Scene ${sceneData.sceneNum}: [Scene title]
+${imageLabel}: [Detailed description - at least 10 words]
+${voiceoverLabel}: [Voiceover content] (${targetWords} ${wordUnit})
 \`\`\`
 
-CHỈ TRẢ VỀ NỘI DUNG SCENE ĐÃ SỬA, KHÔNG GIẢI THÍCH.
+${returnLabel}
 `;
     }
 
@@ -240,55 +280,69 @@ CHỈ TRẢ VỀ NỘI DUNG SCENE ĐÃ SỬA, KHÔNG GIẢI THÍCH.
         targetWords: number,
         tolerance: number,
         systemPrompt: string,
-        context: string
+        context: string,
+        language: Language = 'vi'
     ): string {
         const minWords = targetWords - tolerance;
         const maxWords = targetWords + tolerance;
+        const config = LANGUAGE_CONFIGS[language];
+        const voiceoverLabel = language === 'vi' ? 'Lời dẫn' : 'Voice-over';
+        const imageLabel = language === 'vi' ? 'Hình ảnh' : 'Image';
+        const wordUnit = config.wordUnit;
 
         let prompt = `
-=== NHIỆM VỤ SỬA LỖI NHIỀU SCENES ===
+=== ${language === 'vi' ? 'NHIỆM VỤ SỬA LỖI NHIỀU SCENES' : 'MULTIPLE SCENES FIX TASK'} ===
 
 TỔNG SỐ SCENES CẦN SỬA: ${scenesToFix.length}
 
 CONTEXT:
 ${context.slice(0, 2000)}
 
-YÊU CẦU:
-- Sửa TẤT CẢ scenes bên dưới
-- Đảm bảo đầy đủ 3 thành phần: "Scene X:", "Hình ảnh:", "Lời dẫn:"
-- "Hình ảnh:" phải có ít nhất 10 từ mô tả
-- "Lời dẫn:" phải có độ dài ${targetWords} từ (${minWords}-${maxWords} từ chấp nhận được)
+${language === 'vi' ? 'YÊU CẦU:' : 'REQUIREMENTS:'}
+- ${language === 'vi' ? 'Sửa TẤT CẢ scenes bên dưới' : 'Fix ALL scenes below'}
+- ${language === 'vi' ? 'Đảm bảo đầy đủ 3 thành phần' : 'Ensure all 3 components are present'}
+- ${language === 'vi' ? '"Hình ảnh:" phải có ít nhất 10 từ mô tả' : '"Image:" must have at least 10 words describing'}
+- ${language === 'vi' ? `"Lời dẫn:" phải có độ dài ${targetWords} từ (${minWords}-${maxWords} từ chấp nhận được)` : `"Voice-over:" must have length of ${targetWords} words (${minWords}-${maxWords} accepted)`}
 
 `;
+
+        const sceneLabel = language === 'vi' ? 'SCENE' : 'SCENE';
+        const issueLabel = language === 'vi' ? 'Vấn đề' : 'Issue';
+        const currentLabel = language === 'vi' ? 'Nội dung hiện tại' : 'Current content';
+        const formatLabel = language === 'vi' ? 'FORMAT BẮT BUỘC' : 'REQUIRED FORMAT';
+        const returnLabel = language === 'vi' ? 'CHỈ TRẢ VỀ NỘI DUNG ĐÃ SỬA, KHÔNG GIẢI THÍCH.' : 'ONLY RETURN FIXED CONTENT, NO EXPLANATIONS.';
+        const imageLabel = language === 'vi' ? 'Hình ảnh' : 'Image';
+        const voiceoverLabel = language === 'vi' ? 'Lời dẫn' : 'Voice-over';
+        const wordUnit = config.wordUnit;
 
         scenesToFix.forEach((result, idx) => {
             if (result.sceneData) {
                 prompt += `
---- SCENE ${result.sceneData.sceneNum} (Cần sửa) ---
-Vấn đề: ${result.issues.join(', ')}
-Nội dung hiện tại:
+--- ${sceneLabel} ${result.sceneData.sceneNum} (${language === 'vi' ? 'Cần sửa' : 'Needs fix'}) ---
+${issueLabel}: ${result.issues.join(', ')}
+${currentLabel}:
 ${`Scene ${result.sceneData.sceneNum}: ${result.sceneData.title}
-Hình ảnh: ${result.sceneData.visual}
-Lời dẫn: ${result.sceneData.voiceover}`}
+${imageLabel}: ${result.sceneData.visual}
+${voiceoverLabel}: ${result.sceneData.voiceover}`}
 
 `;
             }
         });
 
         prompt += `
-FORMAT BẮT BUỘC (TRẢ VỀ TẤT CẢ SCENES ĐÃ SỬA):
+${formatLabel} (${language === 'vi' ? 'TRẢ VỀ TẤT CẢ SCENES ĐÃ SỬA' : 'RETURN ALL FIXED SCENES'}):
 \`\`\`
-Scene 1: [Tên cảnh đã sửa]
-Hình ảnh: [Mô tả đã sửa]
-Lời dẫn: [Nội dung đã sửa] (X từ)
+Scene 1: [Fixed scene title]
+${imageLabel}: [Fixed description]
+${voiceoverLabel}: [Fixed content] (${targetWords} ${wordUnit})
 
-Scene 2: [Tên cảnh đã sửa]
-Hình ảnh: [Mô tả đã sửa]
-Lời dẫn: [Nội dung đã sửa] (X từ)
+Scene 2: [Fixed scene title]
+${imageLabel}: [Fixed description]
+${voiceoverLabel}: [Fixed content] (${targetWords} ${wordUnit})
 ...
 \`\`\`
 
-CHỈ TRẢ VỀ NỘI DUNG ĐÃ SỬA, KHÔNG GIẢI THÍCH.
+${returnLabel}
 `;
 
         return prompt;
